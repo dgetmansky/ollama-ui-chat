@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveMetrics } from "../src/metrics/derivedMetrics";
+import { deriveMetrics } from "../src/metrics/derivedMetrics.js";
 
 describe("deriveMetrics", () => {
   it("calculates duration and token metrics from Ollama stats", () => {

@@ -5,8 +5,8 @@ import {
   readSessionFile,
   sessionPath,
   writeSessionFile
-} from "./sessionFiles";
-import type { DerivedMetrics, StoredSession } from "../types/session";
+} from "./sessionFiles.js";
+import type { DerivedMetrics, StoredSession } from "../types/session.js";
 
 const createEmptyMetrics = (): DerivedMetrics => ({
   total_sec: null,
@@ -59,7 +59,7 @@ export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => 
     const files = await listSessionFiles(sessionsDir);
 
     const sessions = await Promise.all(
-      files.map(async (name) => {
+      files.map(async (name: string) => {
         const sessionId = name.replace(/\.json$/, "");
         const [text, fileStat] = await Promise.all([
           readSessionFile(sessionsDir, sessionId),
@@ -75,11 +75,14 @@ export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => 
 
     return sessions
       .sort(
-        (left, right) =>
+        (
+          left: { session: StoredSession; mtimeMs: number },
+          right: { session: StoredSession; mtimeMs: number }
+        ) =>
           right.session.created_at.localeCompare(left.session.created_at) ||
           right.mtimeMs - left.mtimeMs ||
           right.session.id.localeCompare(left.session.id)
       )
-      .map(({ session }) => session);
+      .map(({ session }: { session: StoredSession; mtimeMs: number }) => session);
   }
 });

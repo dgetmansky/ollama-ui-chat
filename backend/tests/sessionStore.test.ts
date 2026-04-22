@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSessionStore } from "../src/storage/sessionStore";
+import { createSessionStore } from "../src/storage/sessionStore.js";
 
 vi.mock("node:crypto", async () => {
   const actual = await vi.importActual<typeof import("node:crypto")>("node:crypto");
@@ -69,7 +69,7 @@ describe("sessionStore", () => {
     const second = await store.create();
     const sessions = await store.list();
 
-    expect(sessions.map((item) => item.id)).toEqual([second.id, first.id]);
+    expect(sessions.map((item: { id: string }) => item.id)).toEqual([second.id, first.id]);
   });
 
   it("orders same-timestamp sessions after a restart by persisted file metadata", async () => {
@@ -89,12 +89,13 @@ describe("sessionStore", () => {
     const second = await store.create();
     await utimes(join(testDir, `${first.id}.json`), firstMtime, firstMtime);
     await utimes(join(testDir, `${second.id}.json`), secondMtime, secondMtime);
+    vi.resetModules();
     const { createSessionStore: freshCreateSessionStore } = await import(
-      "../src/storage/sessionStore?restart=1"
+      "../src/storage/sessionStore.js"
     );
     const sessions = await freshCreateSessionStore({ sessionsDir: testDir }).list();
 
-    expect(sessions.map((item) => item.id)).toEqual([second.id, first.id]);
+    expect(sessions.map((item: { id: string }) => item.id)).toEqual([second.id, first.id]);
   });
 
   it("gives each new session a fresh derived_metrics object", async () => {

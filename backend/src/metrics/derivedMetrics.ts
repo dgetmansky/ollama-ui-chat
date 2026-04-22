@@ -1,4 +1,4 @@
-import type { DerivedMetrics } from "../types/session";
+import type { DerivedMetrics } from "../types/session.js";
 
 type OllamaStats = {
   total_duration?: number;
