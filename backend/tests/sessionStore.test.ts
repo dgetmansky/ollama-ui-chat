@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, utimes } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -58,15 +58,21 @@ describe("sessionStore", () => {
   it("lists sessions in reverse chronological order", async () => {
     testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     const store = createSessionStore({ sessionsDir: testDir });
+    vi.useFakeTimers();
+    const firstCreatedAt = new Date("2024-01-01T00:00:00.000Z");
+    const secondCreatedAt = new Date("2024-01-01T00:00:01.000Z");
+
+    vi.setSystemTime(firstCreatedAt);
 
     const first = await store.create();
+    vi.setSystemTime(secondCreatedAt);
     const second = await store.create();
     const sessions = await store.list();
 
     expect(sessions.map((item) => item.id)).toEqual([second.id, first.id]);
   });
 
-  it("orders same-timestamp sessions by creation order", async () => {
+  it("orders same-timestamp sessions after a restart by persisted file metadata", async () => {
     testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     const store = createSessionStore({ sessionsDir: testDir });
     const mockedRandomUUID = vi.mocked(randomUUID);
@@ -76,10 +82,17 @@ describe("sessionStore", () => {
     mockedRandomUUID
       .mockReturnValueOnce("ffffffff-ffff-4fff-8fff-ffffffffffff")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000000");
+    const firstMtime = new Date("2024-01-01T00:00:00.000Z");
+    const secondMtime = new Date("2024-01-01T00:00:01.000Z");
 
     const first = await store.create();
     const second = await store.create();
-    const sessions = await store.list();
+    await utimes(join(testDir, `${first.id}.json`), firstMtime, firstMtime);
+    await utimes(join(testDir, `${second.id}.json`), secondMtime, secondMtime);
+    const { createSessionStore: freshCreateSessionStore } = await import(
+      "../src/storage/sessionStore?restart=1"
+    );
+    const sessions = await freshCreateSessionStore({ sessionsDir: testDir }).list();
 
     expect(sessions.map((item) => item.id)).toEqual([second.id, first.id]);
   });

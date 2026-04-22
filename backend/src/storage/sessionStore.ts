@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { listSessionFiles, readSessionFile, writeSessionFile } from "./sessionFiles";
+import { stat } from "node:fs/promises";
+import {
+  listSessionFiles,
+  readSessionFile,
+  sessionPath,
+  writeSessionFile
+} from "./sessionFiles";
 import type { DerivedMetrics, StoredSession } from "../types/session";
-
-const sessionCreationOrder = new Map<string, number>();
-let nextSessionCreationOrder = 0;
 
 const createEmptyMetrics = (): DerivedMetrics => ({
   total_sec: null,
@@ -21,8 +24,6 @@ const createSessionId = () => {
 const createDefaultSession = (): StoredSession => {
   const now = new Date().toISOString();
   const id = createSessionId();
-
-  sessionCreationOrder.set(id, nextSessionCreationOrder++);
 
   return {
     id,
@@ -58,17 +59,27 @@ export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => 
     const files = await listSessionFiles(sessionsDir);
 
     const sessions = await Promise.all(
-      files.map(
-        async (name) =>
-          JSON.parse(await readSessionFile(sessionsDir, name.replace(/\.json$/, ""))) as StoredSession
-      )
+      files.map(async (name) => {
+        const sessionId = name.replace(/\.json$/, "");
+        const [text, fileStat] = await Promise.all([
+          readSessionFile(sessionsDir, sessionId),
+          stat(sessionPath(sessionsDir, sessionId))
+        ]);
+
+        return {
+          session: JSON.parse(text) as StoredSession,
+          mtimeMs: fileStat.mtimeMs
+        };
+      })
     );
 
-    return sessions.sort(
-      (left, right) =>
-        right.created_at.localeCompare(left.created_at) ||
-        (sessionCreationOrder.get(right.id) ?? -1) - (sessionCreationOrder.get(left.id) ?? -1) ||
-        right.id.localeCompare(left.id)
-    );
+    return sessions
+      .sort(
+        (left, right) =>
+          right.session.created_at.localeCompare(left.session.created_at) ||
+          right.mtimeMs - left.mtimeMs ||
+          right.session.id.localeCompare(left.session.id)
+      )
+      .map(({ session }) => session);
   }
 });
