@@ -17,21 +17,33 @@ const isStreamingPayload = (payload: unknown) =>
   typeof payload === "object" && payload !== null && "stream" in payload && (payload as { stream?: unknown }).stream === true;
 
 const parseGenerateStream = (text: string) => {
-  const chunks = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as StreamChunk);
-
   let responseText = "";
-  let finalChunk: StreamChunk = {};
+  let finalChunk: StreamChunk | null = null;
+  let parsedChunkCount = 0;
 
-  for (const chunk of chunks) {
-    if (typeof chunk.response === "string") {
-      responseText += chunk.response;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmedLine = line.trim();
+
+    if (!trimmedLine) {
+      continue;
     }
 
-    finalChunk = chunk;
+    try {
+      const chunk = JSON.parse(trimmedLine) as StreamChunk;
+      parsedChunkCount += 1;
+
+      if (typeof chunk.response === "string") {
+        responseText += chunk.response;
+      }
+
+      finalChunk = chunk;
+    } catch {
+      continue;
+    }
+  }
+
+  if (parsedChunkCount === 0 || finalChunk === null) {
+    throw new Error("Unable to parse streamed generate response");
   }
 
   return {

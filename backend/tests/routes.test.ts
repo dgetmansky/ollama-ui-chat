@@ -420,6 +420,78 @@ describe("backend routes", () => {
     });
   });
 
+  it("salvages streamed generate output when malformed lines appear after valid chunks", async () => {
+    const { createOllamaClient } = await vi.importActual<typeof import("../src/ollama/client.js")>(
+      "../src/ollama/client.js"
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn(),
+        text: vi.fn().mockResolvedValue(
+          [
+            JSON.stringify({ response: "Hello", done: false }),
+            "not-json",
+            JSON.stringify({
+              response: " world",
+              done: true,
+              total_duration: 123,
+              load_duration: 45,
+              prompt_eval_count: 2,
+              prompt_eval_duration: 6,
+              eval_count: 3,
+              eval_duration: 9
+            })
+          ].join("\n")
+        )
+      })
+    );
+
+    const client = createOllamaClient({ baseUrl: "http://127.0.0.1:11434" });
+    const response = await client.runGenerate({
+      model: "llama3.1",
+      stream: true
+    });
+
+    expect(response).toMatchObject({
+      response: "Hello world",
+      total_duration: 123,
+      load_duration: 45,
+      prompt_eval_count: 2,
+      prompt_eval_duration: 6,
+      eval_count: 3,
+      eval_duration: 9
+    });
+  });
+
+  it("rejects streamed generate responses when every non-empty line is malformed", async () => {
+    const { createOllamaClient } = await vi.importActual<typeof import("../src/ollama/client.js")>(
+      "../src/ollama/client.js"
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn(),
+        text: vi.fn().mockResolvedValue(["bad-json", "{ still bad }"].join("\n"))
+      })
+    );
+
+    const client = createOllamaClient({ baseUrl: "http://127.0.0.1:11434" });
+
+    await expect(
+      client.runGenerate({
+        model: "llama3.1",
+        stream: true
+      })
+    ).rejects.toThrow("Unable to parse streamed generate response");
+  });
+
   it("wires abort requests through the active abort controller", async () => {
     testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     testDir = join(testRootDir, "sessions");
@@ -475,6 +547,113 @@ describe("backend routes", () => {
 
     expect(runResponse.status).toBe(500);
     expect(runResponse.body).toEqual({ error: "The operation was aborted" });
+  });
+
+  it("rejects duplicate active request ids without overwriting the running controller", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const firstSessionResponse = await request(app).post("/backend/sessions").send({});
+    const secondSessionResponse = await request(app).post("/backend/sessions").send({});
+    const firstSessionId = (firstSessionResponse.body as SessionResponseBody).id;
+    const secondSessionId = (secondSessionResponse.body as SessionResponseBody).id;
+
+    let firstCapturedSignal: AbortSignal | undefined;
+    runGenerate.mockImplementationOnce((_payload, options) => {
+      firstCapturedSignal = options?.signal;
+
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => {
+          const abortError = new Error("The operation was aborted");
+          abortError.name = "AbortError";
+          reject(abortError);
+        });
+      });
+    });
+
+    const firstRunPromise = request(app)
+      .post(`/backend/sessions/${firstSessionId}/run`)
+      .send({
+        prompt: "Build a prompt",
+        endpoint: "/api/generate",
+        model: "llama3.1:8b",
+        stream: true,
+        request_id: "request-123",
+        request_options: {
+          num_predict: 32,
+          temperature: 0.5
+        }
+      })
+      .then((response) => response);
+
+    for (let attempt = 0; attempt < 20 && runGenerate.mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(runGenerate).toHaveBeenCalledTimes(1);
+    expect(firstCapturedSignal?.aborted).toBe(false);
+
+    const duplicateRunResponse = await request(app)
+      .post(`/backend/sessions/${secondSessionId}/run`)
+      .send({
+        prompt: "Build another prompt",
+        endpoint: "/api/generate",
+        model: "llama3.1:8b",
+        stream: true,
+        request_id: "request-123",
+        request_options: {
+          num_predict: 32,
+          temperature: 0.5
+        }
+      });
+
+    expect(duplicateRunResponse.status).toBe(409);
+    expect(duplicateRunResponse.body).toEqual({ error: "Request id already active" });
+
+    const abortResponse = await request(app).post("/backend/requests/request-123/abort").send({});
+
+    expect(abortResponse.status).toBe(202);
+    expect(abortResponse.body).toEqual({ status: "accepted" });
+    expect(firstCapturedSignal?.aborted).toBe(true);
+
+    const firstRunResponse = await firstRunPromise;
+
+    expect(firstRunResponse.status).toBe(500);
+    expect(firstRunResponse.body).toEqual({ error: "The operation was aborted" });
+    expect(runGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up active request ids when session lookup fails before Ollama runs", async () => {
+    const sessionId = "2026-04-22T19-29-56-00000000-0000-0000-0000-000000000001";
+    const getSession = vi.fn(async () => {
+      throw new Error("Session store unavailable");
+    });
+    const saveSession = vi.fn();
+    const runService = createRunService({
+      getSession,
+      saveSession,
+      runChat,
+      runGenerate
+    });
+
+    await expect(
+      runService.runSession(sessionId, {
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_id: "request-123",
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      })
+    ).rejects.toThrow("Session store unavailable");
+
+    expect(runService.abortRequest("request-123")).toBe(false);
+    expect(saveSession).not.toHaveBeenCalled();
   });
 
   it("keeps a stored generate endpoint when a chat run is forced", async () => {
@@ -823,6 +1002,16 @@ describe("backend routes", () => {
         request_options: {
           num_predict: 32,
           temperature: "0.2"
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/generate",
+        model: "llama3.1",
+        stream: "true",
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
         }
       }
     ];

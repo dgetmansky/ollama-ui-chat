@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { RunSessionRequest, RunSessionResponse } from "../types/contracts.js";
 import { InvalidSessionIdError, SessionNotFoundError } from "../services/sessionService.js";
-import { UnsupportedRunRequestError } from "../services/runService.js";
+import { RequestIdAlreadyActiveError, UnsupportedRunRequestError } from "../services/runService.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -11,6 +11,8 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 
 const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest => {
   if (!isRecord(value)) {
@@ -26,6 +28,10 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
   }
 
   if (!isNonEmptyString(value.model)) {
+    return false;
+  }
+
+  if (!isBoolean(value.stream)) {
     return false;
   }
 
@@ -84,6 +90,11 @@ export const createRunRouter = ({
 
       if (error instanceof UnsupportedRunRequestError) {
         response.status(400).json({ error: "Unsupported run request" });
+        return;
+      }
+
+      if (error instanceof RequestIdAlreadyActiveError) {
+        response.status(409).json({ error: "Request id already active" });
         return;
       }
 

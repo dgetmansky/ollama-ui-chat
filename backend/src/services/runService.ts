@@ -32,6 +32,13 @@ export class UnsupportedRunRequestError extends Error {
   }
 }
 
+export class RequestIdAlreadyActiveError extends Error {
+  constructor() {
+    super("Request id already active");
+    this.name = "RequestIdAlreadyActiveError";
+  }
+}
+
 const extractStats = (response: ChatStats): Record<string, unknown> => ({
   total_duration: response.total_duration,
   load_duration: response.load_duration,
@@ -102,9 +109,10 @@ export const createRunService = ({
     controller: AbortController,
     lastRequestId: string
   ) => {
-    const session = applyRunRequest(await getSession(sessionId), request);
+    let session: StoredSession | undefined;
 
     try {
+      session = applyRunRequest(await getSession(sessionId), request);
       const isGenerateRun = request.endpoint === "/api/generate";
       const payload = isGenerateRun
         ? buildGeneratePayload(session, request.prompt)
@@ -164,8 +172,8 @@ export const createRunService = ({
       const latestSession = await getSession(sessionId);
       const isGenerateRun = request.endpoint === "/api/generate";
       const payload = isGenerateRun
-        ? buildGeneratePayload(session, request.prompt)
-        : buildChatPayload(session, request.prompt);
+        ? buildGeneratePayload(session ?? applyRunRequest(latestSession, request), request.prompt)
+        : buildChatPayload(session ?? applyRunRequest(latestSession, request), request.prompt);
       const aborted = controller.signal.aborted || isAbortError(error);
       const failedSession: StoredSession = {
         ...applyRunRequest(latestSession, request),
@@ -210,6 +218,9 @@ export const createRunService = ({
       }
 
       const lastRequestId = request.request_id ?? randomUUID();
+      if (activeRequests.has(lastRequestId)) {
+        throw new RequestIdAlreadyActiveError();
+      }
       const controller = new AbortController();
       activeRequests.set(lastRequestId, controller);
 
