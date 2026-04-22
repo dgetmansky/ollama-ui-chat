@@ -101,7 +101,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "session-beta" })).toBeInTheDocument();
   });
 
-  it("uses the backend default session contract when no sessions exist", async () => {
+  it("uses non-streaming frontend defaults when no sessions exist", async () => {
     vi.mocked(api.listModels).mockResolvedValueOnce({ models: [] });
     vi.mocked(api.listSessions).mockResolvedValueOnce({ sessions: [] });
 
@@ -110,7 +110,7 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("256")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("0.7")).toBeInTheDocument();
     expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/chat");
-    expect(screen.getByLabelText("Stream")).toBeChecked();
+    expect(screen.getByLabelText("Stream")).not.toBeChecked();
   });
 
   it("opens a selected session from the list", async () => {

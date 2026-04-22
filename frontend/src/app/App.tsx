@@ -10,7 +10,7 @@ const emptySession: SessionRecord = {
   id: "",
   endpoint: "/api/chat",
   model: "",
-  stream: true,
+  stream: false,
   request_options: {
     num_predict: 256,
     temperature: 0.7

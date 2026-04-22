@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { deriveMetrics } from "../metrics/derivedMetrics.js";
 import { buildChatPayload } from "../ollama/buildChatPayload.js";
 import type { RunSessionRequest } from "../types/contracts.js";
@@ -66,6 +67,7 @@ export const createRunService = ({
 
     const session = mergeSession(await getSession(sessionId), request);
     const payload = buildChatPayload(session, request.prompt);
+    const lastRequestId = randomUUID();
     try {
       const response = await runChat(payload);
       const stats = extractStats(response);
@@ -84,6 +86,7 @@ export const createRunService = ({
         derived_metrics: derivedMetrics,
         runtime: {
           ...session.runtime,
+          last_request_id: lastRequestId,
           last_status: "completed"
         },
         updated_at: new Date().toISOString()
@@ -95,8 +98,11 @@ export const createRunService = ({
         ...session,
         last_request: payload,
         last_response: createFailureResponse(error),
+        last_stats: {},
+        derived_metrics: deriveMetrics({}),
         runtime: {
           ...session.runtime,
+          last_request_id: lastRequestId,
           last_status: "failed"
         },
         updated_at: new Date().toISOString()

@@ -130,7 +130,7 @@ describe("backend routes", () => {
     expect(await readFile(outsideFile, "utf8")).toBe("outside");
   });
 
-  it("runs non-streaming chat and persists the session update", async () => {
+  it("runs non-streaming chat and persists a fresh request id per success", async () => {
     testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     testDir = join(testRootDir, "sessions");
     await mkdir(testDir);
@@ -139,7 +139,7 @@ describe("backend routes", () => {
     const createdResponse = await request(app).post("/backend/sessions").send({});
     const createdBody = createdResponse.body as SessionResponseBody;
 
-    runChat.mockResolvedValue({
+    runChat.mockResolvedValueOnce({
       message: { role: "assistant", content: "Hello from Ollama" },
       total_duration: 1230000000,
       load_duration: 120000000,
@@ -149,7 +149,7 @@ describe("backend routes", () => {
       eval_duration: 160000000
     });
 
-    const runResponse = await request(app)
+    const firstRunResponse = await request(app)
       .post(`/backend/sessions/${createdBody.id}/run`)
       .send({
         prompt: "Say hello",
@@ -162,9 +162,17 @@ describe("backend routes", () => {
         }
       });
 
-    expect(runResponse.status).toBe(200);
+    expect(firstRunResponse.status).toBe(200);
     expect(runChat).toHaveBeenCalledTimes(1);
     const runCall = vi.mocked(runChat).mock.calls[0]?.[0];
+    const firstRunSession = firstRunResponse.body as {
+      session: {
+        runtime: {
+          last_request_id: string | null;
+          last_status: string;
+        };
+      };
+    };
 
     expect(runCall).toMatchObject({
       model: "llama3.1",
@@ -180,7 +188,49 @@ describe("backend routes", () => {
         temperature: 0.2
       }
     });
-    expect(runResponse.body).toMatchObject({
+    expect(firstRunSession.session.runtime.last_request_id).toEqual(expect.any(String));
+    expect(firstRunSession.session.runtime.last_status).toBe("completed");
+
+    runChat.mockResolvedValueOnce({
+      message: { role: "assistant", content: "Hello again" },
+      total_duration: 2230000000,
+      load_duration: 220000000,
+      prompt_eval_count: 10,
+      prompt_eval_duration: 200000000,
+      eval_count: 9,
+      eval_duration: 180000000
+    });
+
+    const secondRunResponse = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Say hello again",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      });
+
+    expect(secondRunResponse.status).toBe(200);
+    expect(runChat).toHaveBeenCalledTimes(2);
+    const secondRunSession = secondRunResponse.body as {
+      session: {
+        runtime: {
+          last_request_id: string | null;
+          last_status: string;
+        };
+      };
+    };
+
+    expect(secondRunSession.session.runtime.last_request_id).toEqual(expect.any(String));
+    expect(secondRunSession.session.runtime.last_request_id).not.toBe(
+      firstRunSession.session.runtime.last_request_id
+    );
+    expect(secondRunSession.session.runtime.last_status).toBe("completed");
+    expect(secondRunResponse.body).toMatchObject({
       session: {
         id: createdBody.id,
         messages: [
@@ -191,6 +241,14 @@ describe("backend routes", () => {
           {
             role: "assistant",
             content: "Hello from Ollama"
+          },
+          {
+            role: "user",
+            content: "Say hello again"
+          },
+          {
+            role: "assistant",
+            content: "Hello again"
           }
         ],
         last_request: {
@@ -200,6 +258,14 @@ describe("backend routes", () => {
             {
               role: "user",
               content: "Say hello"
+            },
+            {
+              role: "assistant",
+              content: "Hello from Ollama"
+            },
+            {
+              role: "user",
+              content: "Say hello again"
             }
           ],
           options: {
@@ -210,20 +276,20 @@ describe("backend routes", () => {
         last_response: {
           message: {
             role: "assistant",
-            content: "Hello from Ollama"
+            content: "Hello again"
           }
         },
         last_stats: {
-          total_duration: 1230000000,
-          load_duration: 120000000,
-          prompt_eval_count: 12,
-          prompt_eval_duration: 240000000,
-          eval_count: 8,
-          eval_duration: 160000000
+          total_duration: 2230000000,
+          load_duration: 220000000,
+          prompt_eval_count: 10,
+          prompt_eval_duration: 200000000,
+          eval_count: 9,
+          eval_duration: 180000000
         },
         derived_metrics: {
-          total_sec: 1.23,
-          load_sec: 0.12,
+          total_sec: 2.23,
+          load_sec: 0.22,
           prompt_tokens_per_sec: 50,
           eval_tokens_per_sec: 50
         },
@@ -334,7 +400,15 @@ describe("backend routes", () => {
     const createdResponse = await request(app).post("/backend/sessions").send({});
     const createdBody = createdResponse.body as SessionResponseBody;
 
-    runChat.mockRejectedValueOnce(new Error("Ollama exploded"));
+    runChat.mockResolvedValueOnce({
+      message: { role: "assistant", content: "Hello from Ollama" },
+      total_duration: 1230000000,
+      load_duration: 120000000,
+      prompt_eval_count: 12,
+      prompt_eval_duration: 240000000,
+      eval_count: 8,
+      eval_duration: 160000000
+    });
 
     const requestBody = {
       prompt: "Say hello",
@@ -347,19 +421,54 @@ describe("backend routes", () => {
       }
     };
 
-    const runResponse = await request(app)
+    const successResponse = await request(app)
       .post(`/backend/sessions/${createdBody.id}/run`)
       .send(requestBody);
 
-    expect(runResponse.status).toBe(500);
-    expect(runResponse.body).toEqual({ error: "Ollama exploded" });
+    expect(successResponse.status).toBe(200);
     expect(runChat).toHaveBeenCalledTimes(1);
+    const successfulRequestId = (
+      successResponse.body as {
+        session: {
+          runtime: {
+            last_request_id: string | null;
+          };
+        };
+      }
+    ).session.runtime.last_request_id;
+
+    runChat.mockRejectedValueOnce(new Error("Ollama exploded"));
+
+    const failedRunResponse = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Say hello again",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      });
+
+    expect(failedRunResponse.status).toBe(500);
+    expect(failedRunResponse.body).toEqual({ error: "Ollama exploded" });
+    expect(runChat).toHaveBeenCalledTimes(2);
 
     const savedSession = JSON.parse(await readFile(join(testDir, `${createdBody.id}.json`), "utf8")) as {
       last_request: unknown;
       last_response: unknown;
+      last_stats: Record<string, unknown>;
+      derived_metrics: {
+        total_sec: number | null;
+        load_sec: number | null;
+        prompt_tokens_per_sec: number | null;
+        eval_tokens_per_sec: number | null;
+      };
       runtime: {
         last_status: string;
+        last_request_id: string | null;
       };
     };
 
@@ -370,6 +479,14 @@ describe("backend routes", () => {
         {
           role: "user",
           content: "Say hello"
+        },
+        {
+          role: "assistant",
+          content: "Hello from Ollama"
+        },
+        {
+          role: "user",
+          content: "Say hello again"
         }
       ],
       options: {
@@ -383,7 +500,16 @@ describe("backend routes", () => {
         message: "Ollama exploded"
       }
     });
+    expect(savedSession.last_stats).toEqual({});
+    expect(savedSession.derived_metrics).toEqual({
+      total_sec: null,
+      load_sec: null,
+      prompt_tokens_per_sec: null,
+      eval_tokens_per_sec: null
+    });
     expect(savedSession.runtime.last_status).toBe("failed");
+    expect(savedSession.runtime.last_request_id).toEqual(expect.any(String));
+    expect(savedSession.runtime.last_request_id).not.toBe(successfulRequestId);
   });
 
   it("rejects encoded traversal ids on run without touching outside files", async () => {
