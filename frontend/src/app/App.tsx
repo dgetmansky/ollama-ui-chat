@@ -149,18 +149,20 @@ export const App = () => {
       return;
     }
 
+    const sessionId = activeSession.id;
     const response = await api.runSession(activeSession.id, {
       prompt,
-      endpoint: activeSession.endpoint,
+      endpoint: "/api/chat",
       model: activeSession.model || models[0]?.name || "",
       stream: false,
       request_options: activeSession.request_options
     });
 
     setSessions((currentSessions) =>
-      currentSessions.map((session) => (session.id === response.session.id ? response.session : session))
+      currentSessions.some((session) => session.id === sessionId)
+        ? currentSessions.map((session) => (session.id === sessionId ? response.session : session))
+        : [response.session, ...currentSessions]
     );
-    setActiveSessionId(response.session.id);
   };
 
   return (

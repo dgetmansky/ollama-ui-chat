@@ -25,6 +25,8 @@ const { runSession } = vi.hoisted(() => ({
   })
 }));
 
+let sessionLookup: Record<string, SessionRecord> = {};
+
 vi.mock("../lib/api", () => ({
   api: {
     listModels: vi.fn().mockResolvedValue({ models: [{ name: "api-catalog-model" }] }),
@@ -100,7 +102,7 @@ describe("App", () => {
       sessions: baseSessions
     });
     vi.mocked(api.getSession).mockImplementation(async (sessionId: string) => {
-      const session = baseSessions.find((candidate) => candidate.id === sessionId);
+      const session = sessionLookup[sessionId];
 
       if (!session) {
         throw new Error(`Unknown session ${sessionId}`);
@@ -111,6 +113,7 @@ describe("App", () => {
     vi.mocked(api.createSession).mockResolvedValue(newSession);
     vi.mocked(api.deleteSession).mockResolvedValue(undefined);
     vi.mocked(api.ping).mockResolvedValue({ status: "ok" });
+    sessionLookup = Object.fromEntries(baseSessions.map((session) => [session.id, session]));
   });
 
   it("loads models and sessions on startup", async () => {
@@ -181,5 +184,79 @@ describe("App", () => {
       request_options: { num_predict: 256, temperature: 0.7 }
     });
     expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
+  });
+
+  it("forces chat requests to use the Task 8 endpoint contract", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "session-beta" });
+    await user.click(screen.getByRole("button", { name: "session-beta" }));
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(runSession).toHaveBeenCalledWith("session-beta", {
+      prompt: "Hello from the test",
+      endpoint: "/api/chat",
+      model: "beta-model",
+      stream: false,
+      request_options: { num_predict: 384, temperature: 0.15 }
+    });
+  });
+
+  it("keeps the user on the currently selected session after a late send completion", async () => {
+    const user = userEvent.setup();
+    let resolveRunSession: ((value: { session: SessionRecord }) => void) | undefined;
+
+    vi.mocked(api.runSession).mockImplementationOnce(
+      () =>
+        new Promise<{ session: SessionRecord }>((resolve) => {
+          resolveRunSession = resolve;
+        })
+    );
+
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await user.click(screen.getByRole("button", { name: "session-beta" }));
+    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
+
+    resolveRunSession?.({
+      session: {
+        ...baseSessions[0],
+        id: "session-alpha-updated",
+        messages: [
+          { role: "user", content: "Hello from the test" },
+          { role: "assistant", content: "Late response" }
+        ],
+        last_request: { prompt: "Hello from the test" },
+        last_response: { done: true },
+        last_stats: { total_duration: 300 },
+        derived_metrics: { total_sec: 3 }
+      }
+    });
+    sessionLookup["session-alpha-updated"] = {
+      ...baseSessions[0],
+      id: "session-alpha-updated",
+      messages: [
+        { role: "user", content: "Hello from the test" },
+        { role: "assistant", content: "Late response" }
+      ],
+      last_request: { prompt: "Hello from the test" },
+      last_response: { done: true },
+      last_stats: { total_duration: 300 },
+      derived_metrics: { total_sec: 3 }
+    };
+
+    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
+    expect(await screen.findByRole("button", { name: "session-alpha-updated" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "session-alpha-updated" }));
+    expect(await screen.findByText("Late response")).toBeInTheDocument();
   });
 });

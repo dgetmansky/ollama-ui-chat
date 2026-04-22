@@ -17,8 +17,8 @@ export const ChatPanel = ({ messages, onSend }: Props) => {
       return;
     }
 
-    await onSend(trimmedPrompt);
     setPrompt("");
+    await onSend(trimmedPrompt);
   };
 
   return (
