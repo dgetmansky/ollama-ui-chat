@@ -1,5 +1,13 @@
 import type { SessionRecord } from "./types";
 
+type RunSessionBody = {
+  prompt: string;
+  endpoint: SessionRecord["endpoint"];
+  model: string;
+  stream: boolean;
+  request_options: SessionRecord["request_options"];
+};
+
 async function parseJsonResponse<T>(response: Response, requestName: string): Promise<T> {
   if (!response.ok) {
     const body = await response.text();
@@ -32,6 +40,18 @@ export const api = {
   async createSession() {
     const response = await fetch("/backend/sessions", { method: "POST" });
     return parseJsonResponse<SessionRecord>(response, "Create session request");
+  },
+
+  async runSession(sessionId: string, body: RunSessionBody) {
+    const response = await fetch(`/backend/sessions/${encodeURIComponent(sessionId)}/run`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    return parseJsonResponse<{ session: SessionRecord }>(response, "Run session request");
   },
 
   async getSession(sessionId: string) {

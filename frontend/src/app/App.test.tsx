@@ -5,6 +5,26 @@ import { App } from "./App";
 import { api } from "../lib/api";
 import type { SessionRecord } from "../lib/types";
 
+const { runSession } = vi.hoisted(() => ({
+  runSession: vi.fn().mockResolvedValue({
+    session: {
+      id: "session-alpha",
+      endpoint: "/api/chat",
+      model: "alpha-model",
+      stream: false,
+      request_options: { num_predict: 256, temperature: 0.7 },
+      messages: [
+        { role: "user", content: "Hello from the test" },
+        { role: "assistant", content: "Synthetic response" }
+      ],
+      last_request: { prompt: "Hello from the test" },
+      last_response: { done: true },
+      last_stats: { total_duration: 1000 },
+      derived_metrics: { total_sec: 0.000001 }
+    }
+  })
+}));
+
 vi.mock("../lib/api", () => ({
   api: {
     listModels: vi.fn().mockResolvedValue({ models: [{ name: "api-catalog-model" }] }),
@@ -27,7 +47,8 @@ vi.mock("../lib/api", () => ({
     createSession: vi.fn(),
     deleteSession: vi.fn(),
     getSession: vi.fn(),
-    ping: vi.fn()
+    ping: vi.fn(),
+    runSession
   }
 }));
 
@@ -141,5 +162,24 @@ describe("App", () => {
     expect(api.createSession).toHaveBeenCalledTimes(1);
     expect(api.deleteSession).toHaveBeenCalledTimes(1);
     expect(api.deleteSession).toHaveBeenCalledWith("session-new");
+  });
+
+  it("sends a prompt and renders the assistant reply", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(runSession).toHaveBeenCalledTimes(1);
+    expect(runSession).toHaveBeenCalledWith("session-alpha", {
+      prompt: "Hello from the test",
+      endpoint: "/api/chat",
+      model: "alpha-model",
+      stream: false,
+      request_options: { num_predict: 256, temperature: 0.7 }
+    });
+    expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
   });
 });

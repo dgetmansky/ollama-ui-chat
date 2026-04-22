@@ -140,9 +140,28 @@ export const App = () => {
     }
   };
 
-  const activeSession =
-    sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? emptySession;
-  const model = activeSession.model || models[0]?.name || "";
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const sessionView = activeSession ?? sessions[0] ?? emptySession;
+  const model = sessionView.model || models[0]?.name || "";
+
+  const handleSend = async (prompt: string) => {
+    if (!activeSession) {
+      return;
+    }
+
+    const response = await api.runSession(activeSession.id, {
+      prompt,
+      endpoint: activeSession.endpoint,
+      model: activeSession.model || models[0]?.name || "",
+      stream: false,
+      request_options: activeSession.request_options
+    });
+
+    setSessions((currentSessions) =>
+      currentSessions.map((session) => (session.id === response.session.id ? response.session : session))
+    );
+    setActiveSessionId(response.session.id);
+  };
 
   return (
     <div className="app-shell">
@@ -152,11 +171,11 @@ export const App = () => {
         <span className="status-pill">{actionStatus ? `Action: ${actionStatus}` : "Action: Idle"}</span>
       </header>
       <ControlBar
-        endpoint={activeSession.endpoint}
+        endpoint={sessionView.endpoint}
         model={model}
-        stream={activeSession.stream}
-        numPredict={activeSession.request_options.num_predict}
-        temperature={activeSession.request_options.temperature}
+        stream={sessionView.stream}
+        numPredict={sessionView.request_options.num_predict}
+        temperature={sessionView.request_options.temperature}
         onRefreshModels={refreshModels}
         onPingBackend={pingBackend}
         onCreateNewSession={createNewSession}
@@ -168,12 +187,12 @@ export const App = () => {
           onSelectSession={openSession}
           onDeleteActiveSession={deleteActiveSession}
         />
-        <ChatPanel messages={activeSession.messages} />
+        <ChatPanel messages={sessionView.messages} onSend={handleSend} />
         <DiagnosticsPanel
-          requestPayload={activeSession.last_request}
-          responsePayload={activeSession.last_response}
-          stats={activeSession.last_stats}
-          metrics={activeSession.derived_metrics}
+          requestPayload={sessionView.last_request}
+          responsePayload={sessionView.last_response}
+          stats={sessionView.last_stats}
+          metrics={sessionView.derived_metrics}
         />
       </div>
     </div>
