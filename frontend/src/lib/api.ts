@@ -54,6 +54,14 @@ export const api = {
     return parseJsonResponse<{ session: SessionRecord }>(response, "Run session request");
   },
 
+  async abortRequest(requestId: string) {
+    const response = await fetch(`/backend/requests/${encodeURIComponent(requestId)}/abort`, {
+      method: "POST"
+    });
+
+    return parseJsonResponse<{ status: "accepted" }>(response, "Abort request");
+  },
+
   async getSession(sessionId: string) {
     const response = await fetch(`/backend/sessions/${sessionId}`);
     return parseJsonResponse<SessionRecord>(response, "Get session request");

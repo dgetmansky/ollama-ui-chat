@@ -34,5 +34,21 @@ export const createOllamaClient = ({ baseUrl }: { baseUrl: string }) => ({
     }
 
     return (await response.json()) as Record<string, unknown>;
+  },
+
+  async runGenerate(payload: unknown) {
+    const response = await fetch(`${baseUrl}/api/generate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`ollama_request_failed:${response.status}`);
+    }
+
+    return (await response.json()) as Record<string, unknown>;
   }
 });

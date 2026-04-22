@@ -27,6 +27,7 @@ export const App = () => {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [startupError, setStartupError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [actionStatus, setActionStatus] = useState("Idle");
 
   const describeError = (error: unknown, fallback: string) =>
@@ -52,6 +53,7 @@ export const App = () => {
           (currentSessionId) => currentSessionId || sessionsResponse.sessions[0]?.id || ""
         );
         setStartupError("");
+        setActionError("");
         setActionStatus("Idle");
       } catch (error) {
         if (!cancelled) {
@@ -71,18 +73,20 @@ export const App = () => {
     try {
       const modelsResponse = await api.listModels();
       setModels(modelsResponse.models);
+      setActionError("");
       setActionStatus("Models refreshed");
     } catch (error) {
-      setActionStatus(describeError(error, "Model refresh failed"));
+      setActionError(describeError(error, "Model refresh failed"));
     }
   };
 
   const pingBackend = async () => {
     try {
       await api.ping();
+      setActionError("");
       setActionStatus("Ping successful");
     } catch (error) {
-      setActionStatus(describeError(error, "Ping failed"));
+      setActionError(describeError(error, "Ping failed"));
     }
   };
 
@@ -101,9 +105,10 @@ export const App = () => {
         return nextSessions;
       });
       setActiveSessionId(session.id);
+      setActionError("");
       setActionStatus("Session opened");
     } catch (error) {
-      setActionStatus(describeError(error, "Open session failed"));
+      setActionError(describeError(error, "Open session failed"));
     }
   };
 
@@ -112,9 +117,10 @@ export const App = () => {
       const session = await api.createSession();
       setSessions((currentSessions) => [session, ...currentSessions]);
       setActiveSessionId(session.id);
+      setActionError("");
       setActionStatus("Session created");
     } catch (error) {
-      setActionStatus(describeError(error, "Create session failed"));
+      setActionError(describeError(error, "Create session failed"));
     }
   };
 
@@ -134,9 +140,10 @@ export const App = () => {
 
         return nextSessions;
       });
+      setActionError("");
       setActionStatus("Session deleted");
     } catch (error) {
-      setActionStatus(describeError(error, "Delete session failed"));
+      setActionError(describeError(error, "Delete session failed"));
     }
   };
 
@@ -150,19 +157,24 @@ export const App = () => {
     }
 
     const sessionId = activeSession.id;
-    const response = await api.runSession(activeSession.id, {
-      prompt,
-      endpoint: "/api/chat",
-      model: activeSession.model || models[0]?.name || "",
-      stream: false,
-      request_options: activeSession.request_options
-    });
+    try {
+      const response = await api.runSession(activeSession.id, {
+        prompt,
+        endpoint: activeSession.endpoint,
+        model: activeSession.model || models[0]?.name || "",
+        stream: activeSession.stream,
+        request_options: activeSession.request_options
+      });
 
-    setSessions((currentSessions) =>
-      currentSessions.some((session) => session.id === sessionId)
-        ? currentSessions.map((session) => (session.id === sessionId ? response.session : session))
-        : currentSessions
-    );
+      setActionError("");
+      setSessions((currentSessions) =>
+        currentSessions.some((session) => session.id === sessionId)
+          ? currentSessions.map((session) => (session.id === sessionId ? response.session : session))
+          : currentSessions
+      );
+    } catch (error) {
+      setActionError(describeError(error, "Send failed"));
+    }
   };
 
   return (
@@ -172,6 +184,11 @@ export const App = () => {
         <span className="status-pill">{startupError ? "Startup failed" : "Backend reachable"}</span>
         <span className="status-pill">{actionStatus ? `Action: ${actionStatus}` : "Action: Idle"}</span>
       </header>
+      {startupError ? (
+        <div role="alert" className="status-banner">
+          {startupError}
+        </div>
+      ) : null}
       <ControlBar
         endpoint={sessionView.endpoint}
         model={model}
@@ -189,7 +206,7 @@ export const App = () => {
           onSelectSession={openSession}
           onDeleteActiveSession={deleteActiveSession}
         />
-        <ChatPanel messages={sessionView.messages} onSend={handleSend} />
+        <ChatPanel messages={sessionView.messages} errorMessage={actionError} onSend={handleSend} />
         <DiagnosticsPanel
           requestPayload={sessionView.last_request}
           responsePayload={sessionView.last_response}

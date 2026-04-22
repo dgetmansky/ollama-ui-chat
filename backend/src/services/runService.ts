@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { deriveMetrics } from "../metrics/derivedMetrics.js";
 import { buildChatPayload } from "../ollama/buildChatPayload.js";
+import { buildGeneratePayload } from "../ollama/buildGeneratePayload.js";
 import type { RunSessionRequest } from "../types/contracts.js";
 import type { DerivedMetrics, StoredSession } from "../types/session.js";
 
@@ -18,6 +19,10 @@ type OllamaChatResponse = ChatStats & {
     role?: string;
     content?: string;
   };
+};
+
+type OllamaGenerateResponse = ChatStats & {
+  response?: string;
 };
 
 export class UnsupportedRunRequestError extends Error {
@@ -38,6 +43,10 @@ const extractStats = (response: ChatStats): Record<string, unknown> => ({
 
 const applyRunRequest = (session: StoredSession, request: RunSessionRequest): StoredSession => ({
   ...session,
+  endpoint:
+    session.endpoint === "/api/generate" || request.endpoint === "/api/generate"
+      ? "/api/generate"
+      : "/api/chat",
   model: request.model,
   stream: request.stream,
   request_options: request.request_options
@@ -53,11 +62,13 @@ const createFailureResponse = (error: unknown) => ({
 export const createRunService = ({
   getSession,
   saveSession,
-  runChat
+  runChat,
+  runGenerate
 }: {
   getSession: (sessionId: string) => Promise<StoredSession>;
   saveSession: (session: StoredSession) => Promise<StoredSession>;
   runChat: (payload: unknown) => Promise<OllamaChatResponse>;
+  runGenerate: (payload: unknown) => Promise<OllamaGenerateResponse>;
 }) => {
   const sessionQueues = new Map<string, Promise<unknown>>();
 
@@ -77,26 +88,58 @@ export const createRunService = ({
 
   return {
     async runSession(sessionId: string, request: RunSessionRequest) {
-      if (request.endpoint !== "/api/chat" || request.stream) {
+      if (request.endpoint !== "/api/chat" && request.endpoint !== "/api/generate") {
+        throw new UnsupportedRunRequestError();
+      }
+
+      if (request.endpoint === "/api/chat" && request.stream) {
         throw new UnsupportedRunRequestError();
       }
 
       return runQueuedSession(sessionId, async () => {
         const session = applyRunRequest(await getSession(sessionId), request);
-        const payload = buildChatPayload(session, request.prompt);
         const lastRequestId = randomUUID();
         try {
-          const response = await runChat(payload);
+          const isGenerateRun = request.endpoint === "/api/generate";
+          const payload = isGenerateRun
+            ? buildGeneratePayload(session, request.prompt)
+            : buildChatPayload(session, request.prompt);
           const latestSession = await getSession(sessionId);
+          if (isGenerateRun) {
+            const response = await runGenerate(payload);
+            const stats = extractStats(response);
+            const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
+            const updatedSession: StoredSession = {
+              ...applyRunRequest(latestSession, request),
+              messages: [
+                ...latestSession.messages,
+                { role: "user", content: request.prompt },
+                { role: "assistant", content: response.response ?? "" }
+              ],
+              last_request: payload,
+              last_response: response,
+              last_stats: stats,
+              derived_metrics: derivedMetrics,
+              runtime: {
+                ...latestSession.runtime,
+                last_request_id: lastRequestId,
+                last_status: "completed"
+              },
+              updated_at: new Date().toISOString()
+            };
+
+            return saveSession(updatedSession);
+          }
+
+          const response = await runChat(payload);
           const stats = extractStats(response);
           const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
-          const assistantMessage = response.message?.content ?? "";
           const updatedSession: StoredSession = {
             ...applyRunRequest(latestSession, request),
             messages: [
               ...latestSession.messages,
               { role: "user", content: request.prompt },
-              { role: "assistant", content: assistantMessage }
+              { role: "assistant", content: response.message?.content ?? "" }
             ],
             last_request: payload,
             last_response: response,
@@ -113,6 +156,10 @@ export const createRunService = ({
           return saveSession(updatedSession);
         } catch (error) {
           const latestSession = await getSession(sessionId);
+          const isGenerateRun = request.endpoint === "/api/generate";
+          const payload = isGenerateRun
+            ? buildGeneratePayload(session, request.prompt)
+            : buildChatPayload(session, request.prompt);
           const failedSession: StoredSession = {
             ...applyRunRequest(latestSession, request),
             messages: [

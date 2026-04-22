@@ -19,3 +19,7 @@ export type RunSessionRequest = {
 export type RunSessionResponse = {
   session: StoredSession;
 };
+
+export type AbortRequestResponse = {
+  status: "accepted";
+};

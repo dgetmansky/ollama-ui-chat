@@ -3,10 +3,11 @@ import type { SessionMessage } from "../../lib/types";
 
 type Props = {
   messages: SessionMessage[];
+  errorMessage?: string;
   onSend: (prompt: string) => Promise<void>;
 };
 
-export const ChatPanel = ({ messages, onSend }: Props) => {
+export const ChatPanel = ({ messages, errorMessage, onSend }: Props) => {
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -37,6 +38,11 @@ export const ChatPanel = ({ messages, onSend }: Props) => {
           </article>
         ))}
       </div>
+      {errorMessage ? (
+        <div role="alert" className="chat-error-banner">
+          {errorMessage}
+        </div>
+      ) : null}
       <form onSubmit={handleSubmit}>
         <textarea
           aria-label="Prompt"

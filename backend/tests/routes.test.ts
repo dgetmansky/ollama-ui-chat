@@ -38,6 +38,7 @@ const request = createRequire(import.meta.url)("supertest") as (app: Express) =>
 const listModels = vi.fn();
 const ping = vi.fn();
 const runChat = vi.fn();
+const runGenerate = vi.fn();
 let testRootDir = "";
 let testDir = "";
 
@@ -45,7 +46,8 @@ vi.mock("../src/ollama/client.js", () => ({
   createOllamaClient: () => ({
     listModels,
     ping,
-    runChat
+    runChat,
+    runGenerate
   })
 }));
 
@@ -54,6 +56,7 @@ describe("backend routes", () => {
     listModels.mockReset();
     ping.mockReset();
     runChat.mockReset();
+    runGenerate.mockReset();
   });
 
   it("lists creates fetches and deletes sessions", async () => {
@@ -302,6 +305,70 @@ describe("backend routes", () => {
     });
   });
 
+  it("supports generate mode and request abort", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+
+    runGenerate.mockResolvedValueOnce({
+      response: "Generated reply",
+      total_duration: 3230000000,
+      load_duration: 220000000,
+      prompt_eval_count: 14,
+      prompt_eval_duration: 280000000,
+      eval_count: 11,
+      eval_duration: 220000000
+    });
+
+    const runResponse = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Build a prompt",
+        endpoint: "/api/generate",
+        model: "llama3.1:8b",
+        stream: true,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.5
+        }
+      });
+    const runResponseBody = runResponse.body as {
+      session: {
+        endpoint: string;
+        runtime: {
+          last_request_id: string | null;
+        };
+        messages: Array<{ role: string; content: string }>;
+        last_response: Record<string, unknown>;
+      };
+    };
+
+    expect(runResponse.status).toBe(200);
+    expect(runGenerate).toHaveBeenCalledTimes(1);
+    expect(runResponseBody.session.endpoint).toBe("/api/generate");
+    expect(runResponseBody.session.runtime.last_request_id).toEqual(expect.any(String));
+    expect(runResponseBody.session.messages).toEqual([
+      {
+        role: "user",
+        content: "Build a prompt"
+      },
+      {
+        role: "assistant",
+        content: "Generated reply"
+      }
+    ]);
+    expect(runResponseBody.session.last_response).toMatchObject({ response: "Generated reply" });
+
+    const abortResponse = await request(app).post("/backend/requests/request-123/abort").send({});
+
+    expect(abortResponse.status).toBe(202);
+    expect(abortResponse.body).toEqual({ status: "accepted" });
+  });
+
   it("keeps a stored generate endpoint when a chat run is forced", async () => {
     testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     testDir = join(testRootDir, "sessions");
@@ -443,7 +510,8 @@ describe("backend routes", () => {
     const runService = createRunService({
       getSession,
       saveSession,
-      runChat
+      runChat,
+      runGenerate
     });
 
     const firstRun = runService.runSession(sessionId, {
@@ -601,7 +669,7 @@ describe("backend routes", () => {
       },
       {
         prompt: "Say hello",
-        endpoint: "/api/generate",
+        endpoint: "/api/invalid",
         model: "llama3.1",
         stream: false,
         request_options: {
@@ -659,6 +727,7 @@ describe("backend routes", () => {
     }
 
     expect(runChat).not.toHaveBeenCalled();
+    expect(runGenerate).not.toHaveBeenCalled();
   });
 
   it("persists failed run diagnostics when Ollama throws", async () => {

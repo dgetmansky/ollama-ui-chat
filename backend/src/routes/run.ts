@@ -21,7 +21,7 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
     return false;
   }
 
-  if (value.endpoint !== "/api/chat") {
+  if (value.endpoint !== "/api/chat" && value.endpoint !== "/api/generate") {
     return false;
   }
 
@@ -29,7 +29,7 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
     return false;
   }
 
-  if (value.stream !== false) {
+  if (value.endpoint === "/api/chat" && value.stream !== false) {
     return false;
   }
 

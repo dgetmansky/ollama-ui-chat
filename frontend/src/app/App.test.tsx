@@ -59,7 +59,7 @@ const baseSessions: SessionRecord[] = [
     id: "session-alpha",
     endpoint: "/api/chat",
     model: "alpha-model",
-    stream: true,
+    stream: false,
     request_options: { num_predict: 256, temperature: 0.7 },
     messages: [{ role: "user", content: "Alpha prompt" }],
     last_request: { id: "alpha-request" },
@@ -71,7 +71,7 @@ const baseSessions: SessionRecord[] = [
     id: "session-beta",
     endpoint: "/api/generate",
     model: "beta-model",
-    stream: false,
+    stream: true,
     request_options: { num_predict: 384, temperature: 0.15 },
     messages: [{ role: "assistant", content: "Beta answer" }],
     last_request: { id: "beta-request" },
@@ -186,16 +186,17 @@ describe("App", () => {
     expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
   });
 
-  it("forces chat requests to use the Task 8 endpoint contract", async () => {
+  it("uses the active session endpoint and stream flags when sending", async () => {
     const user = userEvent.setup();
     vi.mocked(api.runSession).mockResolvedValueOnce({
       session: {
         id: "session-beta",
-        endpoint: "/api/chat",
+        endpoint: "/api/generate",
         model: "beta-model",
-        stream: false,
+        stream: true,
         request_options: { num_predict: 384, temperature: 0.15 },
         messages: [
+          { role: "assistant", content: "Beta answer" },
           { role: "user", content: "Hello from the test" },
           { role: "assistant", content: "Synthetic response" }
         ],
@@ -216,11 +217,24 @@ describe("App", () => {
 
     expect(runSession).toHaveBeenCalledWith("session-beta", {
       prompt: "Hello from the test",
-      endpoint: "/api/chat",
+      endpoint: "/api/generate",
       model: "beta-model",
-      stream: false,
+      stream: true,
       request_options: { num_predict: 384, temperature: 0.15 }
     });
+  });
+
+  it("shows a visible error banner when send fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.runSession).mockRejectedValueOnce(new Error("Ollama exploded"));
+
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Ollama exploded");
   });
 
   it("disables send and ignores a second submit while a request is pending", async () => {
