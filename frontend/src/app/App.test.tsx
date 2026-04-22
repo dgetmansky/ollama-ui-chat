@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { App } from "./App";
 import { api } from "../lib/api";
+import type { SessionRecord } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -30,7 +31,7 @@ vi.mock("../lib/api", () => ({
   }
 }));
 
-const baseSessions = [
+const baseSessions: SessionRecord[] = [
   {
     id: "session-alpha",
     endpoint: "/api/chat",
@@ -57,6 +58,19 @@ const baseSessions = [
   }
 ];
 
+const newSession: SessionRecord = {
+  id: "session-new",
+  endpoint: "/api/chat",
+  model: "",
+  stream: true,
+  request_options: { num_predict: 256, temperature: 0.7 },
+  messages: [],
+  last_request: {},
+  last_response: {},
+  last_stats: {},
+  derived_metrics: {}
+};
+
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -73,18 +87,7 @@ describe("App", () => {
 
       return session;
     });
-    vi.mocked(api.createSession).mockResolvedValue({
-      id: "session-new",
-      endpoint: "/api/chat",
-      model: "",
-      stream: true,
-      request_options: { num_predict: 256, temperature: 0.7 },
-      messages: [],
-      last_request: {},
-      last_response: {},
-      last_stats: {},
-      derived_metrics: {}
-    });
+    vi.mocked(api.createSession).mockResolvedValue(newSession);
     vi.mocked(api.deleteSession).mockResolvedValue(undefined);
     vi.mocked(api.ping).mockResolvedValue({ status: "ok" });
   });

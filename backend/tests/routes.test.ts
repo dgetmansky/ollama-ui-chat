@@ -89,6 +89,16 @@ describe("backend routes", () => {
     expect(response.body).toEqual({ status: "ok" });
   });
 
+  it("returns a clean 404 for missing sessions", async () => {
+    testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+
+    const response = await request(app).get("/backend/sessions/missing-session");
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Session not found" });
+  });
+
   it("returns normalized models", async () => {
     listModels.mockResolvedValue([{ name: "llama3.1:8b" }]);
     const app = createApp({ sessionsDir: "sessions", ollamaBaseUrl: "http://127.0.0.1:11434" });

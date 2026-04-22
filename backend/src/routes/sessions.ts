@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { SessionsResponse } from "../types/contracts.js";
 import type { StoredSession } from "../types/session.js";
+import { SessionNotFoundError } from "../services/sessionService.js";
 
 export const createSessionsRouter = ({
   listSessions,
@@ -40,6 +41,11 @@ export const createSessionsRouter = ({
       const session = await getSession(request.params.id);
       response.json(session);
     } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        response.status(404).json({ error: "Session not found" });
+        return;
+      }
+
       next(error);
     }
   });

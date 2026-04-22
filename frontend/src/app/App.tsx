@@ -27,6 +27,10 @@ export const App = () => {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [startupError, setStartupError] = useState("");
+  const [actionStatus, setActionStatus] = useState("Idle");
+
+  const describeError = (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback;
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +52,7 @@ export const App = () => {
           (currentSessionId) => currentSessionId || sessionsResponse.sessions[0]?.id || ""
         );
         setStartupError("");
+        setActionStatus("Idle");
       } catch (error) {
         if (!cancelled) {
           setStartupError(error instanceof Error ? error.message : "Startup failed");
@@ -66,18 +71,18 @@ export const App = () => {
     try {
       const modelsResponse = await api.listModels();
       setModels(modelsResponse.models);
-      setStartupError("");
+      setActionStatus("Models refreshed");
     } catch (error) {
-      setStartupError(error instanceof Error ? error.message : "Model refresh failed");
+      setActionStatus(describeError(error, "Model refresh failed"));
     }
   };
 
   const pingBackend = async () => {
     try {
       await api.ping();
-      setStartupError("");
+      setActionStatus("Ping successful");
     } catch (error) {
-      setStartupError(error instanceof Error ? error.message : "Ping failed");
+      setActionStatus(describeError(error, "Ping failed"));
     }
   };
 
@@ -96,9 +101,9 @@ export const App = () => {
         return nextSessions;
       });
       setActiveSessionId(session.id);
-      setStartupError("");
+      setActionStatus("Session opened");
     } catch (error) {
-      setStartupError(error instanceof Error ? error.message : "Open session failed");
+      setActionStatus(describeError(error, "Open session failed"));
     }
   };
 
@@ -107,9 +112,9 @@ export const App = () => {
       const session = await api.createSession();
       setSessions((currentSessions) => [session, ...currentSessions]);
       setActiveSessionId(session.id);
-      setStartupError("");
+      setActionStatus("Session created");
     } catch (error) {
-      setStartupError(error instanceof Error ? error.message : "Create session failed");
+      setActionStatus(describeError(error, "Create session failed"));
     }
   };
 
@@ -129,9 +134,9 @@ export const App = () => {
 
         return nextSessions;
       });
-      setStartupError("");
+      setActionStatus("Session deleted");
     } catch (error) {
-      setStartupError(error instanceof Error ? error.message : "Delete session failed");
+      setActionStatus(describeError(error, "Delete session failed"));
     }
   };
 
@@ -144,6 +149,7 @@ export const App = () => {
       <header className="app-header">
         <h1>Ollama UI GDP</h1>
         <span className="status-pill">{startupError ? "Startup failed" : "Backend reachable"}</span>
+        <span className="status-pill">{actionStatus ? `Action: ${actionStatus}` : "Action: Idle"}</span>
       </header>
       <ControlBar
         endpoint={activeSession.endpoint}
