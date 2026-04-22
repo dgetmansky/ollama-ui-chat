@@ -36,6 +36,25 @@ describe("sessionStore", () => {
     expect(JSON.parse(savedText).id).toBe(session.id);
   });
 
+  it("uses the documented session id and filename contract", async () => {
+    testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    const store = createSessionStore({ sessionsDir: testDir });
+    const mockedRandomUUID = vi.mocked(randomUUID);
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
+    mockedRandomUUID.mockReturnValue("550e8400-e29b-41d4-a716-446655440000");
+
+    const session = await store.create();
+
+    expect(session.id).toBe("2024-01-01T00-00-00-550e8400-e29b-41d4-a716-446655440000");
+    expect(session.id).not.toContain(".000Z");
+    expect(session.id).not.toContain("000000");
+    expect(await readFile(join(testDir, `${session.id}.json`), "utf8")).toContain(
+      `"id": "${session.id}"`
+    );
+  });
+
   it("lists sessions in reverse chronological order", async () => {
     testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     const store = createSessionStore({ sessionsDir: testDir });

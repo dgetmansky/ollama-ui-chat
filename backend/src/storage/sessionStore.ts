@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { listSessionFiles, readSessionFile, writeSessionFile } from "./sessionFiles";
 import type { DerivedMetrics, StoredSession } from "../types/session";
 
-let sessionCreationSequence = 0;
+const sessionCreationOrder = new Map<string, number>();
+let nextSessionCreationOrder = 0;
 
 const createEmptyMetrics = (): DerivedMetrics => ({
   total_sec: null,
@@ -12,17 +13,19 @@ const createEmptyMetrics = (): DerivedMetrics => ({
 });
 
 const createSessionId = () => {
-  const stamp = new Date().toISOString().replace(/:/g, "-");
-  const sequence = String(sessionCreationSequence++).padStart(6, "0");
+  const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
 
-  return `${stamp}-${sequence}-${randomUUID()}`;
+  return `${stamp}-${randomUUID()}`;
 };
 
 const createDefaultSession = (): StoredSession => {
   const now = new Date().toISOString();
+  const id = createSessionId();
+
+  sessionCreationOrder.set(id, nextSessionCreationOrder++);
 
   return {
-    id: createSessionId(),
+    id,
     created_at: now,
     updated_at: now,
     endpoint: "/api/chat",
@@ -63,7 +66,9 @@ export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => 
 
     return sessions.sort(
       (left, right) =>
-        right.created_at.localeCompare(left.created_at) || right.id.localeCompare(left.id)
+        right.created_at.localeCompare(left.created_at) ||
+        (sessionCreationOrder.get(right.id) ?? -1) - (sessionCreationOrder.get(left.id) ?? -1) ||
+        right.id.localeCompare(left.id)
     );
   }
 });
