@@ -1,5 +1,4 @@
 import { createSessionStore } from "../storage/sessionStore.js";
-import { deleteSessionFile, readSessionFile } from "../storage/sessionFiles.js";
 import type { StoredSession } from "../types/session.js";
 
 export class SessionNotFoundError extends Error {
@@ -34,7 +33,7 @@ export const createSessionService = ({ sessionsDir }: { sessionsDir: string }) =
       assertValidSessionId(sessionId);
 
       try {
-        return JSON.parse(await readSessionFile(sessionsDir, sessionId)) as StoredSession;
+        return await store.get(sessionId);
       } catch (error) {
         const fileError = error as NodeJS.ErrnoException;
 
@@ -45,9 +44,13 @@ export const createSessionService = ({ sessionsDir }: { sessionsDir: string }) =
         throw error;
       }
     },
+    saveSession: async (session: StoredSession) => {
+      assertValidSessionId(session.id);
+      return store.save(session);
+    },
     deleteSession: async (sessionId: string) => {
       assertValidSessionId(sessionId);
-      await deleteSessionFile(sessionsDir, sessionId);
+      await store.delete(sessionId);
     }
   };
 };

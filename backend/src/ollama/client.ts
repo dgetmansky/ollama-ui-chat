@@ -18,5 +18,21 @@ export const createOllamaClient = ({ baseUrl }: { baseUrl: string }) => ({
     }
 
     return { status: "ok" as const };
+  },
+
+  async runChat(payload: unknown) {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`ollama_request_failed:${response.status}`);
+    }
+
+    return (await response.json()) as Record<string, unknown>;
   }
 });

@@ -1,7 +1,9 @@
 import express from "express";
 import { createHealthRouter } from "./routes/health.js";
 import { createModelsRouter } from "./routes/models.js";
+import { createRunRouter } from "./routes/run.js";
 import { createSessionsRouter } from "./routes/sessions.js";
+import { createRunService } from "./services/runService.js";
 import { createSessionService } from "./services/sessionService.js";
 import { createOllamaClient } from "./ollama/client.js";
 
@@ -15,6 +17,11 @@ export const createApp = ({
   const app = express();
   const sessionService = createSessionService({ sessionsDir });
   const ollamaClient = createOllamaClient({ baseUrl: ollamaBaseUrl });
+  const runService = createRunService({
+    getSession: sessionService.getSession,
+    saveSession: sessionService.saveSession,
+    runChat: ollamaClient.runChat
+  });
 
   app.use(express.json());
   app.use("/backend", createHealthRouter());
@@ -29,6 +36,7 @@ export const createApp = ({
       ping: ollamaClient.ping
     })
   );
+  app.use("/backend", createRunRouter({ runSession: runService.runSession }));
 
   app.use((error: Error, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     response.status(500).json({ error: error.message });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import {
+  deleteSessionFile,
   listSessionFiles,
   readSessionFile,
   sessionPath,
@@ -84,5 +85,18 @@ export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => 
           right.session.id.localeCompare(left.session.id)
       )
       .map(({ session }: { session: StoredSession; mtimeMs: number }) => session);
+  },
+
+  async get(sessionId: string) {
+    return JSON.parse(await readSessionFile(sessionsDir, sessionId)) as StoredSession;
+  },
+
+  async save(session: StoredSession) {
+    await writeSessionFile(sessionsDir, session.id, JSON.stringify(session, null, 2));
+    return session;
+  },
+
+  async delete(sessionId: string) {
+    await deleteSessionFile(sessionsDir, sessionId);
   }
 });

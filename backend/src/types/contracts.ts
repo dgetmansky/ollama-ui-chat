@@ -7,3 +7,15 @@ export type ModelsResponse = {
 export type SessionsResponse = {
   sessions: StoredSession[];
 };
+
+export type RunSessionRequest = {
+  prompt: string;
+  endpoint: StoredSession["endpoint"];
+  model: string;
+  stream: boolean;
+  request_options: StoredSession["request_options"];
+};
+
+export type RunSessionResponse = {
+  session: StoredSession;
+};
