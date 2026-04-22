@@ -23,7 +23,10 @@ export const createApp = ({
     "/backend",
     createSessionsRouter({
       listSessions: sessionService.listSessions,
-      createSession: sessionService.createSession
+      createSession: sessionService.createSession,
+      getSession: sessionService.getSession,
+      deleteSession: sessionService.deleteSession,
+      ping: ollamaClient.ping
     })
   );
 

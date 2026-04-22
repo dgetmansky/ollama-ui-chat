@@ -4,9 +4,21 @@ type Props = {
   stream: boolean;
   numPredict: number;
   temperature: number;
+  onRefreshModels: () => void;
+  onPingBackend: () => void;
+  onCreateNewSession: () => void;
 };
 
-export const ControlBar = ({ endpoint, model, stream, numPredict, temperature }: Props) => (
+export const ControlBar = ({
+  endpoint,
+  model,
+  stream,
+  numPredict,
+  temperature,
+  onRefreshModels,
+  onPingBackend,
+  onCreateNewSession
+}: Props) => (
   <section className="panel control-bar">
     <label>
       <span>Endpoint</span>
@@ -31,8 +43,14 @@ export const ControlBar = ({ endpoint, model, stream, numPredict, temperature }:
       <span>temperature</span>
       <input readOnly value={temperature} onChange={() => undefined} />
     </label>
-    <button type="button">Refresh models</button>
-    <button type="button">Ping</button>
-    <button type="button">New session</button>
+    <button type="button" onClick={onRefreshModels}>
+      Refresh models
+    </button>
+    <button type="button" onClick={onPingBackend}>
+      Ping
+    </button>
+    <button type="button" onClick={onCreateNewSession}>
+      New session
+    </button>
   </section>
 );

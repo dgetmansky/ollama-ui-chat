@@ -62,6 +62,79 @@ export const App = () => {
     };
   }, []);
 
+  const refreshModels = async () => {
+    try {
+      const modelsResponse = await api.listModels();
+      setModels(modelsResponse.models);
+      setStartupError("");
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : "Model refresh failed");
+    }
+  };
+
+  const pingBackend = async () => {
+    try {
+      await api.ping();
+      setStartupError("");
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : "Ping failed");
+    }
+  };
+
+  const openSession = async (sessionId: string) => {
+    try {
+      const session = await api.getSession(sessionId);
+      setSessions((currentSessions) => {
+        const nextSessions = currentSessions.map((currentSession) =>
+          currentSession.id === session.id ? session : currentSession
+        );
+
+        if (currentSessions.every((currentSession) => currentSession.id !== session.id)) {
+          nextSessions.unshift(session);
+        }
+
+        return nextSessions;
+      });
+      setActiveSessionId(session.id);
+      setStartupError("");
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : "Open session failed");
+    }
+  };
+
+  const createNewSession = async () => {
+    try {
+      const session = await api.createSession();
+      setSessions((currentSessions) => [session, ...currentSessions]);
+      setActiveSessionId(session.id);
+      setStartupError("");
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : "Create session failed");
+    }
+  };
+
+  const deleteActiveSession = async () => {
+    if (!activeSessionId) {
+      return;
+    }
+
+    try {
+      await api.deleteSession(activeSessionId);
+      setSessions((currentSessions) => {
+        const nextSessions = currentSessions.filter((session) => session.id !== activeSessionId);
+
+        setActiveSessionId((currentActiveSessionId) =>
+          currentActiveSessionId === activeSessionId ? nextSessions[0]?.id ?? "" : currentActiveSessionId
+        );
+
+        return nextSessions;
+      });
+      setStartupError("");
+    } catch (error) {
+      setStartupError(error instanceof Error ? error.message : "Delete session failed");
+    }
+  };
+
   const activeSession =
     sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? emptySession;
   const model = activeSession.model || models[0]?.name || "";
@@ -78,9 +151,17 @@ export const App = () => {
         stream={activeSession.stream}
         numPredict={activeSession.request_options.num_predict}
         temperature={activeSession.request_options.temperature}
+        onRefreshModels={refreshModels}
+        onPingBackend={pingBackend}
+        onCreateNewSession={createNewSession}
       />
       <div className="content-grid">
-        <SessionsPanel sessionIds={sessions.map((session) => session.id)} />
+        <SessionsPanel
+          sessionIds={sessions.map((session) => session.id)}
+          activeSessionId={activeSessionId}
+          onSelectSession={openSession}
+          onDeleteActiveSession={deleteActiveSession}
+        />
         <ChatPanel messages={activeSession.messages} />
         <DiagnosticsPanel
           requestPayload={activeSession.last_request}

@@ -4,10 +4,16 @@ import type { StoredSession } from "../types/session.js";
 
 export const createSessionsRouter = ({
   listSessions,
-  createSession
+  createSession,
+  getSession,
+  deleteSession,
+  ping
 }: {
   listSessions: () => Promise<StoredSession[]>;
   createSession: () => Promise<StoredSession>;
+  getSession: (sessionId: string) => Promise<StoredSession>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  ping: () => Promise<{ status: "ok" }>;
 }) => {
   const router = Router();
 
@@ -24,6 +30,32 @@ export const createSessionsRouter = ({
     try {
       const session = await createSession();
       response.status(201).json(session);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/sessions/:id", async (request, response, next) => {
+    try {
+      const session = await getSession(request.params.id);
+      response.json(session);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/sessions/:id", async (request, response, next) => {
+    try {
+      await deleteSession(request.params.id);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/ollama/ping", async (_request, response, next) => {
+    try {
+      response.json(await ping());
     } catch (error) {
       next(error);
     }
