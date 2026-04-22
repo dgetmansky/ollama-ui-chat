@@ -5,9 +5,11 @@ type Props = {
   messages: SessionMessage[];
   errorMessage?: string;
   onSend: (prompt: string) => Promise<void>;
+  pendingRequestId?: string;
+  onStop: (requestId: string) => Promise<void>;
 };
 
-export const ChatPanel = ({ messages, errorMessage, onSend }: Props) => {
+export const ChatPanel = ({ messages, errorMessage, onSend, pendingRequestId, onStop }: Props) => {
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -54,7 +56,17 @@ export const ChatPanel = ({ messages, errorMessage, onSend }: Props) => {
           <button type="submit" disabled={pending}>
             Send
           </button>
-          <button type="button">Stop</button>
+          <button
+            type="button"
+            disabled={!pendingRequestId}
+            onClick={() => {
+              if (pendingRequestId) {
+                void onStop(pendingRequestId);
+              }
+            }}
+          >
+            Stop
+          </button>
         </div>
       </form>
     </main>

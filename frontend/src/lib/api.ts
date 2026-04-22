@@ -6,6 +6,7 @@ type RunSessionBody = {
   model: string;
   stream: boolean;
   request_options: SessionRecord["request_options"];
+  request_id?: string;
 };
 
 async function parseJsonResponse<T>(response: Response, requestName: string): Promise<T> {

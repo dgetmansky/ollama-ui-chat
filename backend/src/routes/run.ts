@@ -45,6 +45,10 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
     return false;
   }
 
+  if (value.request_id !== undefined && !isNonEmptyString(value.request_id)) {
+    return false;
+  }
+
   return true;
 };
 

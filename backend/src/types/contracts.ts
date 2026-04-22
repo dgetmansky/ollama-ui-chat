@@ -14,6 +14,7 @@ export type RunSessionRequest = {
   model: string;
   stream: boolean;
   request_options: StoredSession["request_options"];
+  request_id?: string;
 };
 
 export type RunSessionResponse = {

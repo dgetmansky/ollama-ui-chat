@@ -59,6 +59,15 @@ const createFailureResponse = (error: unknown) => ({
   }
 });
 
+const createAbortError = () => {
+  const error = new Error("The operation was aborted");
+  error.name = "AbortError";
+  return error;
+};
+
+const isAbortError = (error: unknown) =>
+  error instanceof Error && (error.name === "AbortError" || error.message === "The operation was aborted");
+
 export const createRunService = ({
   getSession,
   saveSession,
@@ -67,10 +76,11 @@ export const createRunService = ({
 }: {
   getSession: (sessionId: string) => Promise<StoredSession>;
   saveSession: (session: StoredSession) => Promise<StoredSession>;
-  runChat: (payload: unknown) => Promise<OllamaChatResponse>;
-  runGenerate: (payload: unknown) => Promise<OllamaGenerateResponse>;
+  runChat: (payload: unknown, options?: { signal?: AbortSignal }) => Promise<OllamaChatResponse>;
+  runGenerate: (payload: unknown, options?: { signal?: AbortSignal }) => Promise<OllamaGenerateResponse>;
 }) => {
   const sessionQueues = new Map<string, Promise<unknown>>();
+  const activeRequests = new Map<string, AbortController>();
 
   const runQueuedSession = async <T>(sessionId: string, task: () => Promise<T>): Promise<T> => {
     const previousRun = sessionQueues.get(sessionId) ?? Promise.resolve();
@@ -86,6 +96,109 @@ export const createRunService = ({
     }
   };
 
+  const runRequest = async (
+    sessionId: string,
+    request: RunSessionRequest,
+    controller: AbortController,
+    lastRequestId: string
+  ) => {
+    const session = applyRunRequest(await getSession(sessionId), request);
+
+    try {
+      const isGenerateRun = request.endpoint === "/api/generate";
+      const payload = isGenerateRun
+        ? buildGeneratePayload(session, request.prompt)
+        : buildChatPayload(session, request.prompt);
+      const latestSession = await getSession(sessionId);
+
+      if (isGenerateRun) {
+        const response = await runGenerate(payload, { signal: controller.signal });
+        const stats = extractStats(response);
+        const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
+        const updatedSession: StoredSession = {
+          ...applyRunRequest(latestSession, request),
+          messages: [
+            ...latestSession.messages,
+            { role: "user", content: request.prompt },
+            { role: "assistant", content: response.response ?? "" }
+          ],
+          last_request: payload,
+          last_response: response,
+          last_stats: stats,
+          derived_metrics: derivedMetrics,
+          runtime: {
+            ...latestSession.runtime,
+            last_request_id: lastRequestId,
+            last_status: "completed"
+          },
+          updated_at: new Date().toISOString()
+        };
+
+        return saveSession(updatedSession);
+      }
+
+      const response = await runChat(payload, { signal: controller.signal });
+      const stats = extractStats(response);
+      const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
+      const updatedSession: StoredSession = {
+        ...applyRunRequest(latestSession, request),
+        messages: [
+          ...latestSession.messages,
+          { role: "user", content: request.prompt },
+          { role: "assistant", content: response.message?.content ?? "" }
+        ],
+        last_request: payload,
+        last_response: response,
+        last_stats: stats,
+        derived_metrics: derivedMetrics,
+        runtime: {
+          ...latestSession.runtime,
+          last_request_id: lastRequestId,
+          last_status: "completed"
+        },
+        updated_at: new Date().toISOString()
+      };
+
+      return saveSession(updatedSession);
+    } catch (error) {
+      const latestSession = await getSession(sessionId);
+      const isGenerateRun = request.endpoint === "/api/generate";
+      const payload = isGenerateRun
+        ? buildGeneratePayload(session, request.prompt)
+        : buildChatPayload(session, request.prompt);
+      const aborted = controller.signal.aborted || isAbortError(error);
+      const failedSession: StoredSession = {
+        ...applyRunRequest(latestSession, request),
+        messages: [
+          ...latestSession.messages,
+          { role: "user", content: request.prompt }
+        ],
+        last_request: payload,
+        last_response: createFailureResponse(error),
+        last_stats: {},
+        derived_metrics: deriveMetrics({}),
+        runtime: {
+          ...latestSession.runtime,
+          last_request_id: lastRequestId,
+          last_status: aborted ? "aborted" : "failed"
+        },
+        updated_at: new Date().toISOString()
+      };
+
+      await saveSession(failedSession);
+
+      if (aborted) {
+        throw createAbortError();
+      }
+
+      throw error;
+    } finally {
+      if (activeRequests.get(lastRequestId) === controller) {
+        activeRequests.delete(lastRequestId);
+      }
+    }
+  };
+
   return {
     async runSession(sessionId: string, request: RunSessionRequest) {
       if (request.endpoint !== "/api/chat" && request.endpoint !== "/api/generate") {
@@ -96,92 +209,24 @@ export const createRunService = ({
         throw new UnsupportedRunRequestError();
       }
 
-      return runQueuedSession(sessionId, async () => {
-        const session = applyRunRequest(await getSession(sessionId), request);
-        const lastRequestId = randomUUID();
-        try {
-          const isGenerateRun = request.endpoint === "/api/generate";
-          const payload = isGenerateRun
-            ? buildGeneratePayload(session, request.prompt)
-            : buildChatPayload(session, request.prompt);
-          const latestSession = await getSession(sessionId);
-          if (isGenerateRun) {
-            const response = await runGenerate(payload);
-            const stats = extractStats(response);
-            const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
-            const updatedSession: StoredSession = {
-              ...applyRunRequest(latestSession, request),
-              messages: [
-                ...latestSession.messages,
-                { role: "user", content: request.prompt },
-                { role: "assistant", content: response.response ?? "" }
-              ],
-              last_request: payload,
-              last_response: response,
-              last_stats: stats,
-              derived_metrics: derivedMetrics,
-              runtime: {
-                ...latestSession.runtime,
-                last_request_id: lastRequestId,
-                last_status: "completed"
-              },
-              updated_at: new Date().toISOString()
-            };
+      const lastRequestId = request.request_id ?? randomUUID();
+      const controller = new AbortController();
+      activeRequests.set(lastRequestId, controller);
 
-            return saveSession(updatedSession);
-          }
+      return runQueuedSession(sessionId, async () =>
+        runRequest(sessionId, request, controller, lastRequestId)
+      );
+    },
 
-          const response = await runChat(payload);
-          const stats = extractStats(response);
-          const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
-          const updatedSession: StoredSession = {
-            ...applyRunRequest(latestSession, request),
-            messages: [
-              ...latestSession.messages,
-              { role: "user", content: request.prompt },
-              { role: "assistant", content: response.message?.content ?? "" }
-            ],
-            last_request: payload,
-            last_response: response,
-            last_stats: stats,
-            derived_metrics: derivedMetrics,
-            runtime: {
-              ...latestSession.runtime,
-              last_request_id: lastRequestId,
-              last_status: "completed"
-            },
-            updated_at: new Date().toISOString()
-          };
+    abortRequest(requestId: string) {
+      const controller = activeRequests.get(requestId);
 
-          return saveSession(updatedSession);
-        } catch (error) {
-          const latestSession = await getSession(sessionId);
-          const isGenerateRun = request.endpoint === "/api/generate";
-          const payload = isGenerateRun
-            ? buildGeneratePayload(session, request.prompt)
-            : buildChatPayload(session, request.prompt);
-          const failedSession: StoredSession = {
-            ...applyRunRequest(latestSession, request),
-            messages: [
-              ...latestSession.messages,
-              { role: "user", content: request.prompt }
-            ],
-            last_request: payload,
-            last_response: createFailureResponse(error),
-            last_stats: {},
-            derived_metrics: deriveMetrics({}),
-            runtime: {
-              ...latestSession.runtime,
-              last_request_id: lastRequestId,
-              last_status: "failed"
-            },
-            updated_at: new Date().toISOString()
-          };
+      if (!controller) {
+        return false;
+      }
 
-          await saveSession(failedSession);
-          throw error;
-        }
-      });
+      controller.abort();
+      return true;
     }
   };
 };

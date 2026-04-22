@@ -22,6 +22,9 @@ const emptySession: SessionRecord = {
   derived_metrics: {}
 };
 
+const createRequestId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 export const App = () => {
   const [models, setModels] = useState<Array<{ name: string }>>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -29,6 +32,7 @@ export const App = () => {
   const [startupError, setStartupError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionStatus, setActionStatus] = useState("Idle");
+  const [pendingRequestId, setPendingRequestId] = useState("");
 
   const describeError = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback;
@@ -156,14 +160,17 @@ export const App = () => {
       return;
     }
 
+    const requestId = createRequestId();
     const sessionId = activeSession.id;
+    setPendingRequestId(requestId);
     try {
       const response = await api.runSession(activeSession.id, {
         prompt,
         endpoint: activeSession.endpoint,
         model: activeSession.model || models[0]?.name || "",
         stream: activeSession.stream,
-        request_options: activeSession.request_options
+        request_options: activeSession.request_options,
+        request_id: requestId
       });
 
       setActionError("");
@@ -172,8 +179,23 @@ export const App = () => {
           ? currentSessions.map((session) => (session.id === sessionId ? response.session : session))
           : currentSessions
       );
+      setActionStatus("Send successful");
     } catch (error) {
       setActionError(describeError(error, "Send failed"));
+      setActionStatus(error instanceof Error && error.name === "AbortError" ? "Request aborted" : "Send failed");
+    } finally {
+      setPendingRequestId((currentPendingRequestId) =>
+        currentPendingRequestId === requestId ? "" : currentPendingRequestId
+      );
+    }
+  };
+
+  const handleStop = async (requestId: string) => {
+    try {
+      await api.abortRequest(requestId);
+      setActionStatus("Cancellation requested");
+    } catch (error) {
+      setActionError(describeError(error, "Abort request failed"));
     }
   };
 
@@ -206,7 +228,13 @@ export const App = () => {
           onSelectSession={openSession}
           onDeleteActiveSession={deleteActiveSession}
         />
-        <ChatPanel messages={sessionView.messages} errorMessage={actionError} onSend={handleSend} />
+        <ChatPanel
+          messages={sessionView.messages}
+          errorMessage={actionError}
+          onSend={handleSend}
+          pendingRequestId={pendingRequestId}
+          onStop={handleStop}
+        />
         <DiagnosticsPanel
           requestPayload={sessionView.last_request}
           responsePayload={sessionView.last_response}

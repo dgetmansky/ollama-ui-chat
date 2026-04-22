@@ -39,7 +39,7 @@ export const createApp = ({
     })
   );
   app.use("/backend", createRunRouter({ runSession: runService.runSession }));
-  app.use("/backend", createRequestsRouter());
+  app.use("/backend", createRequestsRouter({ abortRequest: runService.abortRequest }));
 
   app.use((error: Error, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     response.status(500).json({ error: error.message });

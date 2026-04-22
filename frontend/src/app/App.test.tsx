@@ -25,6 +25,10 @@ const { runSession } = vi.hoisted(() => ({
   })
 }));
 
+const { abortRequest } = vi.hoisted(() => ({
+  abortRequest: vi.fn()
+}));
+
 let sessionLookup: Record<string, SessionRecord> = {};
 
 vi.mock("../lib/api", () => ({
@@ -50,6 +54,7 @@ vi.mock("../lib/api", () => ({
     deleteSession: vi.fn(),
     getSession: vi.fn(),
     ping: vi.fn(),
+    abortRequest,
     runSession
   }
 }));
@@ -113,6 +118,7 @@ describe("App", () => {
     vi.mocked(api.createSession).mockResolvedValue(newSession);
     vi.mocked(api.deleteSession).mockResolvedValue(undefined);
     vi.mocked(api.ping).mockResolvedValue({ status: "ok" });
+    vi.mocked(api.abortRequest).mockResolvedValue({ status: "accepted" });
     sessionLookup = Object.fromEntries(baseSessions.map((session) => [session.id, session]));
   });
 
@@ -181,7 +187,8 @@ describe("App", () => {
       endpoint: "/api/chat",
       model: "alpha-model",
       stream: false,
-      request_options: { num_predict: 256, temperature: 0.7 }
+      request_options: { num_predict: 256, temperature: 0.7 },
+      request_id: expect.any(String)
     });
     expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
   });
@@ -220,7 +227,8 @@ describe("App", () => {
       endpoint: "/api/generate",
       model: "beta-model",
       stream: true,
-      request_options: { num_predict: 384, temperature: 0.15 }
+      request_options: { num_predict: 384, temperature: 0.15 },
+      request_id: expect.any(String)
     });
   });
 
@@ -318,5 +326,46 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "session-alpha" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "session-beta" })).toBeInTheDocument();
     expect(screen.queryByText("Late response")).not.toBeInTheDocument();
+  });
+
+  it("aborts the pending request when stop is pressed", async () => {
+    const user = userEvent.setup();
+    let resolveRunSession: ((value: { session: SessionRecord }) => void) | undefined;
+    let requestId = "";
+
+    vi.mocked(api.runSession).mockImplementationOnce(
+      async (_sessionId: string, body: Parameters<typeof api.runSession>[1]) =>
+        new Promise<{ session: SessionRecord }>((resolve) => {
+          requestId = body.request_id ?? "";
+          resolveRunSession = resolve;
+        })
+    );
+
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(api.abortRequest).toHaveBeenCalledWith(requestId);
+
+    await act(async () => {
+      resolveRunSession?.({
+        session: {
+          ...baseSessions[0],
+          messages: [
+            { role: "user", content: "Hello from the test" },
+            { role: "assistant", content: "Pending response" }
+          ],
+          last_request: { prompt: "Hello from the test" },
+          last_response: { done: true },
+          last_stats: { total_duration: 300 },
+          derived_metrics: { total_sec: 3 }
+        }
+      });
+    });
   });
 });
