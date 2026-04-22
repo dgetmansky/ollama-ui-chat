@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { App } from "./App";
+import { api } from "../lib/api";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -32,5 +33,17 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("preferred-session-model")).toBeInTheDocument();
     expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
     expect(await screen.findByRole("button", { name: "session-from-api-9f2a" })).toBeInTheDocument();
+  });
+
+  it("uses the backend default session contract when no sessions exist", async () => {
+    vi.mocked(api.listModels).mockResolvedValueOnce({ models: [] });
+    vi.mocked(api.listSessions).mockResolvedValueOnce({ sessions: [] });
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("256")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("0.7")).toBeInTheDocument();
+    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/chat");
+    expect(screen.getByLabelText("Stream")).toBeChecked();
   });
 });

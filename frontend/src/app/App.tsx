@@ -10,10 +10,10 @@ const emptySession: SessionRecord = {
   id: "",
   endpoint: "/api/chat",
   model: "",
-  stream: false,
+  stream: true,
   request_options: {
-    num_predict: 0,
-    temperature: 0
+    num_predict: 256,
+    temperature: 0.7
   },
   messages: [],
   last_request: {},
