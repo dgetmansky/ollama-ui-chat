@@ -36,9 +36,8 @@ const extractStats = (response: ChatStats): Record<string, unknown> => ({
   eval_duration: response.eval_duration
 });
 
-const mergeSession = (session: StoredSession, request: RunSessionRequest): StoredSession => ({
+const applyRunRequest = (session: StoredSession, request: RunSessionRequest): StoredSession => ({
   ...session,
-  endpoint: request.endpoint,
   model: request.model,
   stream: request.stream,
   request_options: request.request_options
@@ -65,18 +64,19 @@ export const createRunService = ({
       throw new UnsupportedRunRequestError();
     }
 
-    const session = mergeSession(await getSession(sessionId), request);
+    const session = applyRunRequest(await getSession(sessionId), request);
     const payload = buildChatPayload(session, request.prompt);
     const lastRequestId = randomUUID();
     try {
       const response = await runChat(payload);
+      const latestSession = await getSession(sessionId);
       const stats = extractStats(response);
       const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
       const assistantMessage = response.message?.content ?? "";
       const updatedSession: StoredSession = {
-        ...session,
+        ...applyRunRequest(latestSession, request),
         messages: [
-          ...session.messages,
+          ...latestSession.messages,
           { role: "user", content: request.prompt },
           { role: "assistant", content: assistantMessage }
         ],
@@ -85,7 +85,7 @@ export const createRunService = ({
         last_stats: stats,
         derived_metrics: derivedMetrics,
         runtime: {
-          ...session.runtime,
+          ...latestSession.runtime,
           last_request_id: lastRequestId,
           last_status: "completed"
         },
@@ -94,14 +94,19 @@ export const createRunService = ({
 
       return saveSession(updatedSession);
     } catch (error) {
+      const latestSession = await getSession(sessionId);
       const failedSession: StoredSession = {
-        ...session,
+        ...applyRunRequest(latestSession, request),
+        messages: [
+          ...latestSession.messages,
+          { role: "user", content: request.prompt }
+        ],
         last_request: payload,
         last_response: createFailureResponse(error),
         last_stats: {},
         derived_metrics: deriveMetrics({}),
         runtime: {
-          ...session.runtime,
+          ...latestSession.runtime,
           last_request_id: lastRequestId,
           last_status: "failed"
         },

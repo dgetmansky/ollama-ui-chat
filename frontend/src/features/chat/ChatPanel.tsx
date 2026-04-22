@@ -8,17 +8,23 @@ type Props = {
 
 export const ChatPanel = ({ messages, onSend }: Props) => {
   const [prompt, setPrompt] = useState("");
+  const [pending, setPending] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt) {
+    if (!trimmedPrompt || pending) {
       return;
     }
 
+    setPending(true);
     setPrompt("");
-    await onSend(trimmedPrompt);
+    try {
+      await onSend(trimmedPrompt);
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -39,7 +45,9 @@ export const ChatPanel = ({ messages, onSend }: Props) => {
           onChange={(event) => setPrompt(event.target.value)}
         />
         <div className="chat-actions">
-          <button type="submit">Send</button>
+          <button type="submit" disabled={pending}>
+            Send
+          </button>
           <button type="button">Stop</button>
         </div>
       </form>

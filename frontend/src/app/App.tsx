@@ -161,7 +161,7 @@ export const App = () => {
     setSessions((currentSessions) =>
       currentSessions.some((session) => session.id === sessionId)
         ? currentSessions.map((session) => (session.id === sessionId ? response.session : session))
-        : [response.session, ...currentSessions]
+        : currentSessions
     );
   };
 

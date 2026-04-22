@@ -1,5 +1,5 @@
 import userEvent from "@testing-library/user-event";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { App } from "./App";
 import { api } from "../lib/api";
@@ -188,6 +188,23 @@ describe("App", () => {
 
   it("forces chat requests to use the Task 8 endpoint contract", async () => {
     const user = userEvent.setup();
+    vi.mocked(api.runSession).mockResolvedValueOnce({
+      session: {
+        id: "session-beta",
+        endpoint: "/api/chat",
+        model: "beta-model",
+        stream: false,
+        request_options: { num_predict: 384, temperature: 0.15 },
+        messages: [
+          { role: "user", content: "Hello from the test" },
+          { role: "assistant", content: "Synthetic response" }
+        ],
+        last_request: { prompt: "Hello from the test" },
+        last_response: { done: true },
+        last_stats: { total_duration: 1000 },
+        derived_metrics: { total_sec: 0.000001 }
+      }
+    });
     render(<App />);
 
     await screen.findByRole("button", { name: "session-beta" });
@@ -206,7 +223,7 @@ describe("App", () => {
     });
   });
 
-  it("keeps the user on the currently selected session after a late send completion", async () => {
+  it("disables send and ignores a second submit while a request is pending", async () => {
     const user = userEvent.setup();
     let resolveRunSession: ((value: { session: SessionRecord }) => void) | undefined;
 
@@ -223,40 +240,69 @@ describe("App", () => {
     await user.type(prompt, "Hello from the test");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
-    await user.click(screen.getByRole("button", { name: "session-beta" }));
-    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(prompt).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(runSession).toHaveBeenCalledTimes(1);
 
-    resolveRunSession?.({
-      session: {
-        ...baseSessions[0],
-        id: "session-alpha-updated",
-        messages: [
-          { role: "user", content: "Hello from the test" },
-          { role: "assistant", content: "Late response" }
-        ],
-        last_request: { prompt: "Hello from the test" },
-        last_response: { done: true },
-        last_stats: { total_duration: 300 },
-        derived_metrics: { total_sec: 3 }
-      }
+    await act(async () => {
+      resolveRunSession?.({
+        session: {
+          ...baseSessions[0],
+          messages: [
+            { role: "user", content: "Hello from the test" },
+            { role: "assistant", content: "Pending response" }
+          ],
+          last_request: { prompt: "Hello from the test" },
+          last_response: { done: true },
+          last_stats: { total_duration: 300 },
+          derived_metrics: { total_sec: 3 }
+        }
+      });
     });
-    sessionLookup["session-alpha-updated"] = {
-      ...baseSessions[0],
-      id: "session-alpha-updated",
-      messages: [
-        { role: "user", content: "Hello from the test" },
-        { role: "assistant", content: "Late response" }
-      ],
-      last_request: { prompt: "Hello from the test" },
-      last_response: { done: true },
-      last_stats: { total_duration: 300 },
-      derived_metrics: { total_sec: 3 }
-    };
+    expect(await screen.findByText("Pending response")).toBeInTheDocument();
+  });
 
-    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
-    expect(await screen.findByRole("button", { name: "session-alpha-updated" })).toBeInTheDocument();
+  it("does not resurrect a session deleted while send is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveRunSession: ((value: { session: SessionRecord }) => void) | undefined;
 
-    await user.click(screen.getByRole("button", { name: "session-alpha-updated" }));
-    expect(await screen.findByText("Late response")).toBeInTheDocument();
+    vi.mocked(api.runSession).mockImplementationOnce(
+      () =>
+        new Promise<{ session: SessionRecord }>((resolve) => {
+          resolveRunSession = resolve;
+        })
+    );
+
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Hello from the test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await user.click(screen.getByRole("button", { name: "Delete session" }));
+
+    expect(screen.queryByRole("button", { name: "session-alpha" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "session-beta" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRunSession?.({
+        session: {
+          ...baseSessions[0],
+          id: "session-alpha",
+          messages: [
+            { role: "user", content: "Hello from the test" },
+            { role: "assistant", content: "Late response" }
+          ],
+          last_request: { prompt: "Hello from the test" },
+          last_response: { done: true },
+          last_stats: { total_duration: 300 },
+          derived_metrics: { total_sec: 3 }
+        }
+      });
+    });
+
+    expect(screen.queryByRole("button", { name: "session-alpha" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "session-beta" })).toBeInTheDocument();
+    expect(screen.queryByText("Late response")).not.toBeInTheDocument();
   });
 });

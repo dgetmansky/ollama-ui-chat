@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { Express } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
+import { createRunService } from "../src/services/runService.js";
+import type { StoredSession } from "../src/types/session.js";
 
 type ResponseLike = {
   status: number;
@@ -298,6 +300,234 @@ describe("backend routes", () => {
         }
       }
     });
+  });
+
+  it("keeps a stored generate endpoint when a chat run is forced", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+    const sessionFile = join(testDir, `${createdBody.id}.json`);
+
+    await writeFile(
+      sessionFile,
+      JSON.stringify(
+        {
+          ...JSON.parse(await readFile(sessionFile, "utf8")),
+          endpoint: "/api/generate"
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    runChat.mockResolvedValueOnce({
+      message: { role: "assistant", content: "Forced chat response" },
+      total_duration: 1000,
+      load_duration: 100,
+      prompt_eval_count: 1,
+      prompt_eval_duration: 10,
+      eval_count: 1,
+      eval_duration: 10
+    });
+
+    const response = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      session: {
+        id: createdBody.id,
+        endpoint: "/api/generate",
+        last_request: {
+          model: "llama3.1",
+          stream: false
+        }
+      }
+    });
+    expect(JSON.parse(await readFile(sessionFile, "utf8"))).toMatchObject({
+      endpoint: "/api/generate",
+      last_request: {
+        model: "llama3.1",
+        stream: false
+      }
+    });
+  });
+
+  it("preserves both message pairs across overlapping runs for the same session", async () => {
+    const sessionId = "2026-04-22T19-29-56-00000000-0000-0000-0000-000000000000";
+    const initialSession: StoredSession = {
+      id: sessionId,
+      created_at: "2026-04-22T19:29:56.000Z",
+      updated_at: "2026-04-22T19:29:56.000Z",
+      endpoint: "/api/chat",
+      model: "llama3.1",
+      stream: false,
+      request_options: {
+        num_predict: 32,
+        temperature: 0.2
+      },
+      messages: [],
+      last_request: {},
+      last_response: {},
+      last_stats: {},
+      derived_metrics: {
+        total_sec: null,
+        load_sec: null,
+        prompt_tokens_per_sec: null,
+        eval_tokens_per_sec: null
+      },
+      runtime: {
+        last_request_id: null,
+        last_status: "idle"
+      }
+    };
+
+    let storedSession = initialSession;
+    const getSession = vi.fn(async () => storedSession);
+    const saveSession = vi.fn(async (session: StoredSession) => {
+      storedSession = session;
+      return session;
+    });
+
+    let resolveFirstRun: ((value: unknown) => void) | undefined;
+    let resolveSecondRun: ((value: unknown) => void) | undefined;
+
+    runChat
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstRun = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondRun = resolve;
+          })
+      );
+
+    const runService = createRunService({
+      getSession,
+      saveSession,
+      runChat
+    });
+
+    const firstRun = runService.runSession(sessionId, {
+      prompt: "First prompt",
+      endpoint: "/api/chat",
+      model: "llama3.1",
+      stream: false,
+      request_options: {
+        num_predict: 32,
+        temperature: 0.2
+      }
+    });
+
+    const secondRun = runService.runSession(sessionId, {
+      prompt: "Second prompt",
+      endpoint: "/api/chat",
+      model: "llama3.1",
+      stream: false,
+      request_options: {
+        num_predict: 32,
+        temperature: 0.2
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(resolveFirstRun).toBeDefined();
+    expect(resolveSecondRun).toBeDefined();
+
+    resolveFirstRun?.({
+      message: { role: "assistant", content: "First reply" },
+      total_duration: 1000,
+      load_duration: 100,
+      prompt_eval_count: 1,
+      prompt_eval_duration: 10,
+      eval_count: 1,
+      eval_duration: 10
+    });
+    const firstResponse = await firstRun;
+
+    resolveSecondRun?.({
+      message: { role: "assistant", content: "Second reply" },
+      total_duration: 2000,
+      load_duration: 200,
+      prompt_eval_count: 2,
+      prompt_eval_duration: 20,
+      eval_count: 2,
+      eval_duration: 20
+    });
+    const secondResponse = await secondRun;
+
+    expect(firstResponse).toMatchObject({
+      id: sessionId,
+      messages: [
+        {
+          role: "user",
+          content: "First prompt"
+        },
+        {
+          role: "assistant",
+          content: "First reply"
+        }
+      ]
+    });
+    expect(secondResponse).toMatchObject({
+      id: sessionId,
+      messages: [
+        {
+          role: "user",
+          content: "First prompt"
+        },
+        {
+          role: "assistant",
+          content: "First reply"
+        },
+        {
+          role: "user",
+          content: "Second prompt"
+        },
+        {
+          role: "assistant",
+          content: "Second reply"
+        }
+      ]
+    });
+    expect(storedSession.messages).toEqual([
+      {
+        role: "user",
+        content: "First prompt"
+      },
+      {
+        role: "assistant",
+        content: "First reply"
+      },
+      {
+        role: "user",
+        content: "Second prompt"
+      },
+      {
+        role: "assistant",
+        content: "Second reply"
+      }
+    ]);
   });
 
   it("rejects malformed run bodies before calling Ollama", async () => {
