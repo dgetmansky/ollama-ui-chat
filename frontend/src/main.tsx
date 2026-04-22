@@ -1,14 +1,10 @@
-import { createRoot } from "react-dom/client";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { App } from "./app/App";
+import "./styles/global.css";
 
-const rootElement = document.getElementById("root");
-
-if (!rootElement) {
-  throw new Error("Missing root element");
-}
-
-createRoot(rootElement).render(
-  <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-    <h1>Ollama UI GDP</h1>
-    <p>Bootstrap placeholder runtime.</p>
-  </main>
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 );
