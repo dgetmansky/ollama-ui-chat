@@ -10,7 +10,7 @@ const emptyMetrics: DerivedMetrics = {
 };
 
 const createSessionId = () => {
-  const stamp = new Date().toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "");
+  const stamp = new Date().toISOString().replace(/:/g, "-");
   return `${stamp}-${randomUUID()}`;
 };
 

@@ -20,7 +20,21 @@ describe("deriveMetrics", () => {
     });
   });
 
-  it("returns null token rates when durations are missing or zero", () => {
+  it("returns null token rates when durations are missing, undefined, or zero", () => {
+    expect(
+      deriveMetrics({
+        total_duration: 1_000_000_000,
+        load_duration: 0,
+        prompt_eval_count: 10,
+        eval_count: 5
+      })
+    ).toEqual({
+      total_sec: 1,
+      load_sec: 0,
+      prompt_tokens_per_sec: null,
+      eval_tokens_per_sec: null
+    });
+
     expect(
       deriveMetrics({
         total_duration: 1_000_000_000,
