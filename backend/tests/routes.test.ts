@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Express } from "express";
@@ -33,6 +33,7 @@ type RequestLike = {
 const request = createRequire(import.meta.url)("supertest") as (app: Express) => RequestLike;
 const listModels = vi.fn();
 const ping = vi.fn();
+let testRootDir = "";
 let testDir = "";
 
 vi.mock("../src/ollama/client.js", () => ({
@@ -49,7 +50,9 @@ describe("backend routes", () => {
   });
 
   it("lists creates fetches and deletes sessions", async () => {
-    testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
     const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
 
     const initialResponse = await request(app).get("/backend/sessions");
@@ -90,13 +93,36 @@ describe("backend routes", () => {
   });
 
   it("returns a clean 404 for missing sessions", async () => {
-    testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
     const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
 
-    const response = await request(app).get("/backend/sessions/missing-session");
+    const response = await request(app).get("/backend/sessions/2026-04-22T21-14-02-12345678-1234-1234-1234-123456789abc");
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "Session not found" });
+  });
+
+  it("rejects encoded traversal ids before reading or deleting outside files", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const outsideFile = join(testRootDir, "outside.json");
+    await writeFile(outsideFile, "outside", "utf8");
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const traversalPath = "/backend/sessions/..%2Foutside";
+
+    const readResponse = await request(app).get(traversalPath);
+    const deleteResponse = await request(app).delete(traversalPath);
+
+    expect(readResponse.status).toBe(400);
+    expect(readResponse.body).toEqual({ error: "Invalid session id" });
+    expect(deleteResponse.status).toBe(400);
+    expect(deleteResponse.body).toEqual({ error: "Invalid session id" });
+    expect(await readFile(outsideFile, "utf8")).toBe("outside");
   });
 
   it("returns normalized models", async () => {
@@ -122,8 +148,9 @@ describe("backend routes", () => {
 });
 
 afterEach(async () => {
-  if (testDir) {
-    await rm(testDir, { recursive: true, force: true });
+  if (testRootDir) {
+    await rm(testRootDir, { recursive: true, force: true });
+    testRootDir = "";
     testDir = "";
   }
 });

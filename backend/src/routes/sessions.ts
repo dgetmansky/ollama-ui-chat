@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { SessionsResponse } from "../types/contracts.js";
 import type { StoredSession } from "../types/session.js";
-import { SessionNotFoundError } from "../services/sessionService.js";
+import { InvalidSessionIdError, SessionNotFoundError } from "../services/sessionService.js";
 
 export const createSessionsRouter = ({
   listSessions,
@@ -41,6 +41,11 @@ export const createSessionsRouter = ({
       const session = await getSession(request.params.id);
       response.json(session);
     } catch (error) {
+      if (error instanceof InvalidSessionIdError) {
+        response.status(400).json({ error: "Invalid session id" });
+        return;
+      }
+
       if (error instanceof SessionNotFoundError) {
         response.status(404).json({ error: "Session not found" });
         return;
@@ -55,6 +60,11 @@ export const createSessionsRouter = ({
       await deleteSession(request.params.id);
       response.status(204).end();
     } catch (error) {
+      if (error instanceof InvalidSessionIdError) {
+        response.status(400).json({ error: "Invalid session id" });
+        return;
+      }
+
       next(error);
     }
   });
