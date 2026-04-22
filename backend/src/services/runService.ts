@@ -43,6 +43,13 @@ const mergeSession = (session: StoredSession, request: RunSessionRequest): Store
   request_options: request.request_options
 });
 
+const createFailureResponse = (error: unknown) => ({
+  error: {
+    name: error instanceof Error ? error.name : "Error",
+    message: error instanceof Error ? error.message : "Unknown error"
+  }
+});
+
 export const createRunService = ({
   getSession,
   saveSession,
@@ -59,28 +66,44 @@ export const createRunService = ({
 
     const session = mergeSession(await getSession(sessionId), request);
     const payload = buildChatPayload(session, request.prompt);
-    const response = await runChat(payload);
-    const stats = extractStats(response);
-    const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
-    const assistantMessage = response.message?.content ?? "";
-    const updatedSession: StoredSession = {
-      ...session,
-      messages: [
-        ...session.messages,
-        { role: "user", content: request.prompt },
-        { role: "assistant", content: assistantMessage }
-      ],
-      last_request: payload,
-      last_response: response,
-      last_stats: stats,
-      derived_metrics: derivedMetrics,
-      runtime: {
-        ...session.runtime,
-        last_status: "completed"
-      },
-      updated_at: new Date().toISOString()
-    };
+    try {
+      const response = await runChat(payload);
+      const stats = extractStats(response);
+      const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
+      const assistantMessage = response.message?.content ?? "";
+      const updatedSession: StoredSession = {
+        ...session,
+        messages: [
+          ...session.messages,
+          { role: "user", content: request.prompt },
+          { role: "assistant", content: assistantMessage }
+        ],
+        last_request: payload,
+        last_response: response,
+        last_stats: stats,
+        derived_metrics: derivedMetrics,
+        runtime: {
+          ...session.runtime,
+          last_status: "completed"
+        },
+        updated_at: new Date().toISOString()
+      };
 
-    return saveSession(updatedSession);
+      return saveSession(updatedSession);
+    } catch (error) {
+      const failedSession: StoredSession = {
+        ...session,
+        last_request: payload,
+        last_response: createFailureResponse(error),
+        runtime: {
+          ...session.runtime,
+          last_status: "failed"
+        },
+        updated_at: new Date().toISOString()
+      };
+
+      await saveSession(failedSession);
+      throw error;
+    }
   }
 });

@@ -234,6 +234,158 @@ describe("backend routes", () => {
     });
   });
 
+  it("rejects malformed run bodies before calling Ollama", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+
+    const invalidBodies = [
+      {
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/generate",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: true,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: "32",
+          temperature: 0.2
+        }
+      },
+      {
+        prompt: "Say hello",
+        endpoint: "/api/chat",
+        model: "llama3.1",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: "0.2"
+        }
+      }
+    ];
+
+    for (const body of invalidBodies) {
+      const response = await request(app).post(`/backend/sessions/${createdBody.id}/run`).send(body);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: "Invalid run request" });
+    }
+
+    expect(runChat).not.toHaveBeenCalled();
+  });
+
+  it("persists failed run diagnostics when Ollama throws", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+
+    runChat.mockRejectedValueOnce(new Error("Ollama exploded"));
+
+    const requestBody = {
+      prompt: "Say hello",
+      endpoint: "/api/chat",
+      model: "llama3.1",
+      stream: false,
+      request_options: {
+        num_predict: 32,
+        temperature: 0.2
+      }
+    };
+
+    const runResponse = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send(requestBody);
+
+    expect(runResponse.status).toBe(500);
+    expect(runResponse.body).toEqual({ error: "Ollama exploded" });
+    expect(runChat).toHaveBeenCalledTimes(1);
+
+    const savedSession = JSON.parse(await readFile(join(testDir, `${createdBody.id}.json`), "utf8")) as {
+      last_request: unknown;
+      last_response: unknown;
+      runtime: {
+        last_status: string;
+      };
+    };
+
+    expect(savedSession.last_request).toMatchObject({
+      model: "llama3.1",
+      stream: false,
+      messages: [
+        {
+          role: "user",
+          content: "Say hello"
+        }
+      ],
+      options: {
+        num_predict: 32,
+        temperature: 0.2
+      }
+    });
+    expect(savedSession.last_response).toEqual({
+      error: {
+        name: "Error",
+        message: "Ollama exploded"
+      }
+    });
+    expect(savedSession.runtime.last_status).toBe("failed");
+  });
+
   it("rejects encoded traversal ids on run without touching outside files", async () => {
     testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     testDir = join(testRootDir, "sessions");

@@ -3,6 +3,51 @@ import type { RunSessionRequest, RunSessionResponse } from "../types/contracts.j
 import { InvalidSessionIdError, SessionNotFoundError } from "../services/sessionService.js";
 import { UnsupportedRunRequestError } from "../services/runService.js";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (!isNonEmptyString(value.prompt)) {
+    return false;
+  }
+
+  if (value.endpoint !== "/api/chat") {
+    return false;
+  }
+
+  if (!isNonEmptyString(value.model)) {
+    return false;
+  }
+
+  if (value.stream !== false) {
+    return false;
+  }
+
+  if (!isRecord(value.request_options)) {
+    return false;
+  }
+
+  if (!isFiniteNumber(value.request_options.num_predict)) {
+    return false;
+  }
+
+  if (!isFiniteNumber(value.request_options.temperature)) {
+    return false;
+  }
+
+  return true;
+};
+
 export const createRunRouter = ({
   runSession
 }: {
@@ -12,7 +57,14 @@ export const createRunRouter = ({
 
   router.post("/sessions/:id/run", async (request, response, next) => {
     try {
-      const session = await runSession(request.params.id, request.body as RunSessionRequest);
+      const runRequest = request.body as unknown;
+
+      if (!isValidRunSessionRequest(runRequest)) {
+        response.status(400).json({ error: "Invalid run request" });
+        return;
+      }
+
+      const session = await runSession(request.params.id, runRequest);
       const body: RunSessionResponse = { session };
       response.json(body);
     } catch (error) {
