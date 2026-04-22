@@ -58,63 +58,83 @@ export const createRunService = ({
   getSession: (sessionId: string) => Promise<StoredSession>;
   saveSession: (session: StoredSession) => Promise<StoredSession>;
   runChat: (payload: unknown) => Promise<OllamaChatResponse>;
-}) => ({
-  async runSession(sessionId: string, request: RunSessionRequest) {
-    if (request.endpoint !== "/api/chat" || request.stream) {
-      throw new UnsupportedRunRequestError();
-    }
+}) => {
+  const sessionQueues = new Map<string, Promise<unknown>>();
 
-    const session = applyRunRequest(await getSession(sessionId), request);
-    const payload = buildChatPayload(session, request.prompt);
-    const lastRequestId = randomUUID();
+  const runQueuedSession = async <T>(sessionId: string, task: () => Promise<T>): Promise<T> => {
+    const previousRun = sessionQueues.get(sessionId) ?? Promise.resolve();
+    const currentRun = previousRun.catch(() => undefined).then(task);
+    sessionQueues.set(sessionId, currentRun);
+
     try {
-      const response = await runChat(payload);
-      const latestSession = await getSession(sessionId);
-      const stats = extractStats(response);
-      const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
-      const assistantMessage = response.message?.content ?? "";
-      const updatedSession: StoredSession = {
-        ...applyRunRequest(latestSession, request),
-        messages: [
-          ...latestSession.messages,
-          { role: "user", content: request.prompt },
-          { role: "assistant", content: assistantMessage }
-        ],
-        last_request: payload,
-        last_response: response,
-        last_stats: stats,
-        derived_metrics: derivedMetrics,
-        runtime: {
-          ...latestSession.runtime,
-          last_request_id: lastRequestId,
-          last_status: "completed"
-        },
-        updated_at: new Date().toISOString()
-      };
-
-      return saveSession(updatedSession);
-    } catch (error) {
-      const latestSession = await getSession(sessionId);
-      const failedSession: StoredSession = {
-        ...applyRunRequest(latestSession, request),
-        messages: [
-          ...latestSession.messages,
-          { role: "user", content: request.prompt }
-        ],
-        last_request: payload,
-        last_response: createFailureResponse(error),
-        last_stats: {},
-        derived_metrics: deriveMetrics({}),
-        runtime: {
-          ...latestSession.runtime,
-          last_request_id: lastRequestId,
-          last_status: "failed"
-        },
-        updated_at: new Date().toISOString()
-      };
-
-      await saveSession(failedSession);
-      throw error;
+      return await currentRun;
+    } finally {
+      if (sessionQueues.get(sessionId) === currentRun) {
+        sessionQueues.delete(sessionId);
+      }
     }
-  }
-});
+  };
+
+  return {
+    async runSession(sessionId: string, request: RunSessionRequest) {
+      if (request.endpoint !== "/api/chat" || request.stream) {
+        throw new UnsupportedRunRequestError();
+      }
+
+      return runQueuedSession(sessionId, async () => {
+        const session = applyRunRequest(await getSession(sessionId), request);
+        const payload = buildChatPayload(session, request.prompt);
+        const lastRequestId = randomUUID();
+        try {
+          const response = await runChat(payload);
+          const latestSession = await getSession(sessionId);
+          const stats = extractStats(response);
+          const derivedMetrics: DerivedMetrics = deriveMetrics(stats);
+          const assistantMessage = response.message?.content ?? "";
+          const updatedSession: StoredSession = {
+            ...applyRunRequest(latestSession, request),
+            messages: [
+              ...latestSession.messages,
+              { role: "user", content: request.prompt },
+              { role: "assistant", content: assistantMessage }
+            ],
+            last_request: payload,
+            last_response: response,
+            last_stats: stats,
+            derived_metrics: derivedMetrics,
+            runtime: {
+              ...latestSession.runtime,
+              last_request_id: lastRequestId,
+              last_status: "completed"
+            },
+            updated_at: new Date().toISOString()
+          };
+
+          return saveSession(updatedSession);
+        } catch (error) {
+          const latestSession = await getSession(sessionId);
+          const failedSession: StoredSession = {
+            ...applyRunRequest(latestSession, request),
+            messages: [
+              ...latestSession.messages,
+              { role: "user", content: request.prompt }
+            ],
+            last_request: payload,
+            last_response: createFailureResponse(error),
+            last_stats: {},
+            derived_metrics: deriveMetrics({}),
+            runtime: {
+              ...latestSession.runtime,
+              last_request_id: lastRequestId,
+              last_status: "failed"
+            },
+            updated_at: new Date().toISOString()
+          };
+
+          await saveSession(failedSession);
+          throw error;
+        }
+      });
+    }
+  };
+};

@@ -399,7 +399,26 @@ describe("backend routes", () => {
 
     let storedSession = initialSession;
     const getSession = vi.fn(async () => storedSession);
+    const createDeferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((innerResolve) => {
+        resolve = innerResolve;
+      });
+      return { promise, resolve };
+    };
+    const firstSave = createDeferred();
+    const secondSave = createDeferred();
+    let saveCallCount = 0;
     const saveSession = vi.fn(async (session: StoredSession) => {
+      saveCallCount += 1;
+      if (saveCallCount === 1) {
+        await firstSave.promise;
+      } else if (saveCallCount === 2) {
+        await secondSave.promise;
+      } else {
+        throw new Error("Unexpected save call");
+      }
+
       storedSession = session;
       return session;
     });
@@ -449,10 +468,14 @@ describe("backend routes", () => {
       }
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+    await flush();
+
+    expect(runChat).toHaveBeenCalledTimes(1);
     expect(resolveFirstRun).toBeDefined();
-    expect(resolveSecondRun).toBeDefined();
+    expect(resolveSecondRun).toBeUndefined();
+    expect(saveSession).not.toHaveBeenCalled();
 
     resolveFirstRun?.({
       message: { role: "assistant", content: "First reply" },
@@ -463,7 +486,19 @@ describe("backend routes", () => {
       eval_count: 1,
       eval_duration: 10
     });
+    await flush();
+
+    expect(runChat).toHaveBeenCalledTimes(1);
+    expect(saveSession).toHaveBeenCalledTimes(1);
+
+    firstSave.resolve();
     const firstResponse = await firstRun;
+
+    await flush();
+
+    expect(runChat).toHaveBeenCalledTimes(2);
+    expect(resolveSecondRun).toBeDefined();
+    expect(saveSession).toHaveBeenCalledTimes(1);
 
     resolveSecondRun?.({
       message: { role: "assistant", content: "Second reply" },
@@ -474,6 +509,11 @@ describe("backend routes", () => {
       eval_count: 2,
       eval_duration: 20
     });
+    await flush();
+
+    expect(saveSession).toHaveBeenCalledTimes(2);
+
+    secondSave.resolve();
     const secondResponse = await secondRun;
 
     expect(firstResponse).toMatchObject({
