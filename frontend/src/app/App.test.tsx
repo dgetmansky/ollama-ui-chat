@@ -4,15 +4,15 @@ import { App } from "./App";
 
 vi.mock("../lib/api", () => ({
   api: {
-    listModels: vi.fn().mockResolvedValue({ models: [{ name: "llama3.1:8b" }] }),
+    listModels: vi.fn().mockResolvedValue({ models: [{ name: "api-catalog-model" }] }),
     listSessions: vi.fn().mockResolvedValue({
       sessions: [
         {
-          id: "2026-04-22T10-15-03-550e8400",
-          endpoint: "/api/chat",
-          model: "llama3.1:8b",
-          stream: true,
-          request_options: { num_predict: 256, temperature: 0.7 },
+          id: "session-from-api-9f2a",
+          endpoint: "/api/generate",
+          model: "preferred-session-model",
+          stream: false,
+          request_options: { num_predict: 384, temperature: 0.15 },
           messages: [],
           last_request: {},
           last_response: {},
@@ -29,9 +29,8 @@ describe("App", () => {
   it("loads models and sessions on startup", async () => {
     render(<App />);
 
-    expect(await screen.findByDisplayValue("llama3.1:8b")).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: "2026-04-22T10-15-03-550e8400" })
-    ).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("preferred-session-model")).toBeInTheDocument();
+    expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/generate");
+    expect(await screen.findByRole("button", { name: "session-from-api-9f2a" })).toBeInTheDocument();
   });
 });

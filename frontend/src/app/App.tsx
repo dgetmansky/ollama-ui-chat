@@ -26,25 +26,33 @@ export const App = () => {
   const [models, setModels] = useState<Array<{ name: string }>>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
+  const [startupError, setStartupError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      const [modelsResponse, sessionsResponse] = await Promise.all([
-        api.listModels(),
-        api.listSessions()
-      ]);
+      try {
+        const [modelsResponse, sessionsResponse] = await Promise.all([
+          api.listModels(),
+          api.listSessions()
+        ]);
 
-      if (cancelled) {
-        return;
+        if (cancelled) {
+          return;
+        }
+
+        setModels(modelsResponse.models);
+        setSessions(sessionsResponse.sessions);
+        setActiveSessionId(
+          (currentSessionId) => currentSessionId || sessionsResponse.sessions[0]?.id || ""
+        );
+        setStartupError("");
+      } catch (error) {
+        if (!cancelled) {
+          setStartupError(error instanceof Error ? error.message : "Startup failed");
+        }
       }
-
-      setModels(modelsResponse.models);
-      setSessions(sessionsResponse.sessions);
-      setActiveSessionId(
-        (currentSessionId) => currentSessionId || sessionsResponse.sessions[0]?.id || ""
-      );
     };
 
     void load();
@@ -56,13 +64,13 @@ export const App = () => {
 
   const activeSession =
     sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? emptySession;
-  const model = models[0]?.name ?? activeSession.model;
+  const model = activeSession.model || models[0]?.name || "";
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <h1>Ollama UI GDP</h1>
-        <span className="status-pill">Backend reachable</span>
+        <span className="status-pill">{startupError ? "Startup failed" : "Backend reachable"}</span>
       </header>
       <ControlBar
         endpoint={activeSession.endpoint}

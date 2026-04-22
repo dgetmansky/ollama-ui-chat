@@ -17,7 +17,7 @@ export const ControlBar = ({ endpoint, model, stream, numPredict, temperature }:
     </label>
     <label>
       <span>Model</span>
-      <input aria-label="Model" value={model} onChange={() => undefined} />
+      <input aria-label="Model" readOnly value={model} onChange={() => undefined} />
     </label>
     <label>
       <span>Stream</span>
@@ -25,11 +25,11 @@ export const ControlBar = ({ endpoint, model, stream, numPredict, temperature }:
     </label>
     <label>
       <span>num_predict</span>
-      <input value={numPredict} onChange={() => undefined} />
+      <input readOnly value={numPredict} onChange={() => undefined} />
     </label>
     <label>
       <span>temperature</span>
-      <input value={temperature} onChange={() => undefined} />
+      <input readOnly value={temperature} onChange={() => undefined} />
     </label>
     <button type="button">Refresh models</button>
     <button type="button">Ping</button>
