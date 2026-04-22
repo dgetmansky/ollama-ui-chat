@@ -18,6 +18,7 @@ type OllamaChatResponse = ChatStats & {
   message?: {
     role?: string;
     content?: string;
+    thinking?: string;
   };
 };
 
@@ -65,6 +66,9 @@ const createFailureResponse = (error: unknown) => ({
     message: error instanceof Error ? error.message : "Unknown error"
   }
 });
+
+const extractChatAssistantText = (response: OllamaChatResponse) =>
+  response.message?.content || response.message?.thinking || "";
 
 const createAbortError = () => {
   const error = new Error("The operation was aborted");
@@ -153,7 +157,7 @@ export const createRunService = ({
         messages: [
           ...latestSession.messages,
           { role: "user", content: request.prompt },
-          { role: "assistant", content: response.message?.content ?? "" }
+          { role: "assistant", content: extractChatAssistantText(response) }
         ],
         last_request: payload,
         last_response: response,

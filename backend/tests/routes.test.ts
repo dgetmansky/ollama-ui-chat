@@ -82,14 +82,14 @@ describe("backend routes", () => {
     expect(createdResponse.body).toMatchObject({
       endpoint: "/api/chat",
       model: "",
-      stream: true
+      stream: false
     });
     expect(fetchedResponse.status).toBe(200);
     expect(fetchedResponse.body).toMatchObject({
       id: createdBody.id,
       endpoint: "/api/chat",
       model: "",
-      stream: true
+      stream: false
     });
     expect(deletedResponse.status).toBe(204);
     expect(finalResponse.status).toBe(200);
@@ -305,6 +305,50 @@ describe("backend routes", () => {
         runtime: {
           last_status: "completed"
         }
+      }
+    });
+  });
+
+  it("uses chat thinking text when the assistant content is empty", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+
+    runChat.mockResolvedValueOnce({
+      message: {
+        role: "assistant",
+        content: "",
+        thinking: "Thinking fallback"
+      },
+      total_duration: 1000000000,
+      eval_count: 1,
+      eval_duration: 100000000
+    });
+
+    const response = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Think out loud",
+        endpoint: "/api/chat",
+        model: "qwen3.5",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      session: {
+        messages: [
+          { role: "user", content: "Think out loud" },
+          { role: "assistant", content: "Thinking fallback" }
+        ]
       }
     });
   });
