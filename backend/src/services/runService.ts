@@ -57,6 +57,7 @@ const applyRunRequest = (session: StoredSession, request: RunSessionRequest): St
       : "/api/chat",
   model: request.model,
   stream: request.stream,
+  think: request.think ?? session.think ?? true,
   request_options: request.request_options
 });
 
@@ -68,7 +69,13 @@ const createFailureResponse = (error: unknown) => ({
 });
 
 const extractChatAssistantText = (response: OllamaChatResponse) =>
-  response.message?.content || response.message?.thinking || "";
+  response.message?.content ?? "";
+
+const createChatAssistantMessage = (response: OllamaChatResponse) => ({
+  role: "assistant" as const,
+  content: extractChatAssistantText(response),
+  ...(response.message?.thinking ? { thinking: response.message.thinking } : {})
+});
 
 const createAbortError = () => {
   const error = new Error("The operation was aborted");
@@ -83,12 +90,14 @@ export const createRunService = ({
   getSession,
   saveSession,
   runChat,
-  runGenerate
+  runGenerate,
+  getPromptPreamble = async () => ""
 }: {
   getSession: (sessionId: string) => Promise<StoredSession>;
   saveSession: (session: StoredSession) => Promise<StoredSession>;
   runChat: (payload: unknown, options?: { signal?: AbortSignal }) => Promise<OllamaChatResponse>;
   runGenerate: (payload: unknown, options?: { signal?: AbortSignal }) => Promise<OllamaGenerateResponse>;
+  getPromptPreamble?: () => Promise<string>;
 }) => {
   const sessionQueues = new Map<string, Promise<unknown>>();
   const activeRequests = new Map<string, AbortController>();
@@ -114,13 +123,15 @@ export const createRunService = ({
     lastRequestId: string
   ) => {
     let session: StoredSession | undefined;
+    let promptPreamble = "";
 
     try {
       session = applyRunRequest(await getSession(sessionId), request);
       const isGenerateRun = request.endpoint === "/api/generate";
+      promptPreamble = await getPromptPreamble();
       const payload = isGenerateRun
-        ? buildGeneratePayload(session, request.prompt)
-        : buildChatPayload(session, request.prompt);
+        ? buildGeneratePayload(session, request.prompt, promptPreamble)
+        : buildChatPayload(session, request.prompt, promptPreamble);
       const latestSession = await getSession(sessionId);
 
       if (isGenerateRun) {
@@ -157,7 +168,7 @@ export const createRunService = ({
         messages: [
           ...latestSession.messages,
           { role: "user", content: request.prompt },
-          { role: "assistant", content: extractChatAssistantText(response) }
+          createChatAssistantMessage(response)
         ],
         last_request: payload,
         last_response: response,
@@ -176,8 +187,8 @@ export const createRunService = ({
       const latestSession = await getSession(sessionId);
       const isGenerateRun = request.endpoint === "/api/generate";
       const payload = isGenerateRun
-        ? buildGeneratePayload(session ?? applyRunRequest(latestSession, request), request.prompt)
-        : buildChatPayload(session ?? applyRunRequest(latestSession, request), request.prompt);
+        ? buildGeneratePayload(session ?? applyRunRequest(latestSession, request), request.prompt, promptPreamble)
+        : buildChatPayload(session ?? applyRunRequest(latestSession, request), request.prompt, promptPreamble);
       const aborted = controller.signal.aborted || isAbortError(error);
       const failedSession: StoredSession = {
         ...applyRunRequest(latestSession, request),

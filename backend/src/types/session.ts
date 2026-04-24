@@ -3,11 +3,25 @@ export type SessionMessageRole = "user" | "assistant";
 export type SessionMessage = {
   role: SessionMessageRole;
   content: string;
+  thinking?: string;
 };
 
 export type RequestOptions = {
+  num_ctx?: number;
   num_predict: number;
   temperature: number;
+};
+
+export type SessionDefaults = {
+  endpoint: "/api/chat" | "/api/generate";
+  stream: boolean;
+  think: boolean;
+  request_options: RequestOptions;
+};
+
+export type HistoryOptions = {
+  max_messages: number;
+  include_thinking: boolean;
 };
 
 export type DerivedMetrics = {
@@ -29,7 +43,9 @@ export type StoredSession = {
   endpoint: "/api/chat" | "/api/generate";
   model: string;
   stream: boolean;
+  think: boolean;
   request_options: RequestOptions;
+  history?: HistoryOptions;
   messages: SessionMessage[];
   last_request: Record<string, unknown>;
   last_response: Record<string, unknown>;

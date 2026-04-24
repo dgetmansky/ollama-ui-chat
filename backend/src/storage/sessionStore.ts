@@ -7,7 +7,23 @@ import {
   sessionPath,
   writeSessionFile
 } from "./sessionFiles.js";
-import type { DerivedMetrics, StoredSession } from "../types/session.js";
+import type { DerivedMetrics, HistoryOptions, SessionDefaults, StoredSession } from "../types/session.js";
+
+const defaultSessionDefaults: SessionDefaults = {
+  endpoint: "/api/chat",
+  stream: false,
+  think: true,
+  request_options: {
+    num_ctx: 32768,
+    num_predict: 4096,
+    temperature: 0.7
+  }
+};
+
+const defaultHistoryOptions: HistoryOptions = {
+  max_messages: 20,
+  include_thinking: false
+};
 
 const createEmptyMetrics = (): DerivedMetrics => ({
   total_sec: null,
@@ -22,7 +38,10 @@ const createSessionId = () => {
   return `${stamp}-${randomUUID()}`;
 };
 
-const createDefaultSession = (): StoredSession => {
+const createDefaultSession = (
+  defaults: SessionDefaults = defaultSessionDefaults,
+  history: HistoryOptions = defaultHistoryOptions
+): StoredSession => {
   const now = new Date().toISOString();
   const id = createSessionId();
 
@@ -30,13 +49,12 @@ const createDefaultSession = (): StoredSession => {
     id,
     created_at: now,
     updated_at: now,
-    endpoint: "/api/chat",
+    endpoint: defaults.endpoint,
     model: "",
-    stream: false,
-    request_options: {
-      num_predict: 256,
-      temperature: 0.7
-    },
+    stream: defaults.stream,
+    think: defaults.think,
+    request_options: { ...defaults.request_options },
+    history: { ...history },
     messages: [],
     last_request: {},
     last_response: {},
@@ -49,9 +67,17 @@ const createDefaultSession = (): StoredSession => {
   };
 };
 
-export const createSessionStore = ({ sessionsDir }: { sessionsDir: string }) => ({
+export const createSessionStore = ({
+  sessionsDir,
+  getSessionDefaults = async () => defaultSessionDefaults,
+  getHistoryOptions = async () => defaultHistoryOptions
+}: {
+  sessionsDir: string;
+  getSessionDefaults?: () => Promise<SessionDefaults>;
+  getHistoryOptions?: () => Promise<HistoryOptions>;
+}) => ({
   async create() {
-    const session = createDefaultSession();
+    const session = createDefaultSession(await getSessionDefaults(), await getHistoryOptions());
     await writeSessionFile(sessionsDir, session.id, JSON.stringify(session, null, 2));
     return session;
   },

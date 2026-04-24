@@ -65,13 +65,15 @@ export const createOllamaClient = ({ baseUrl }: { baseUrl: string }) => ({
   },
 
   async ping() {
+    const startedAt = performance.now();
     const response = await fetch(`${baseUrl}/api/tags`);
+    const latencyMs = Math.round(performance.now() - startedAt);
 
     if (!response.ok) {
       throw new Error(`ollama_unreachable:${response.status}`);
     }
 
-    return { status: "ok" as const };
+    return { status: "ok" as const, latency_ms: latencyMs };
   },
 
   async runChat(payload: unknown, options: FetchOptions = {}) {

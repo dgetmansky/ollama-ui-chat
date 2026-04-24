@@ -5,6 +5,7 @@ type RunSessionBody = {
   endpoint: SessionRecord["endpoint"];
   model: string;
   stream: boolean;
+  think?: boolean;
   request_options: SessionRecord["request_options"];
   request_id?: string;
 };
@@ -75,6 +76,6 @@ export const api = {
 
   async ping() {
     const response = await fetch("/backend/ollama/ping");
-    return parseJsonResponse<{ status: "ok" }>(response, "Ping request");
+    return parseJsonResponse<{ status: "ok"; latency_ms?: number }>(response, "Ping request");
   }
 };

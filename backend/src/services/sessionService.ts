@@ -1,5 +1,5 @@
 import { createSessionStore } from "../storage/sessionStore.js";
-import type { StoredSession } from "../types/session.js";
+import type { HistoryOptions, SessionDefaults, StoredSession } from "../types/session.js";
 
 export class SessionNotFoundError extends Error {
   constructor() {
@@ -23,8 +23,16 @@ const assertValidSessionId = (sessionId: string) => {
   }
 };
 
-export const createSessionService = ({ sessionsDir }: { sessionsDir: string }) => {
-  const store = createSessionStore({ sessionsDir });
+export const createSessionService = ({
+  sessionsDir,
+  getSessionDefaults,
+  getHistoryOptions
+}: {
+  sessionsDir: string;
+  getSessionDefaults?: () => Promise<SessionDefaults>;
+  getHistoryOptions?: () => Promise<HistoryOptions>;
+}) => {
+  const store = createSessionStore({ sessionsDir, getSessionDefaults, getHistoryOptions });
 
   return {
     listSessions: () => store.list(),

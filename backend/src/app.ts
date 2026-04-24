@@ -7,22 +7,30 @@ import { createSessionsRouter } from "./routes/sessions.js";
 import { createRunService } from "./services/runService.js";
 import { createSessionService } from "./services/sessionService.js";
 import { createOllamaClient } from "./ollama/client.js";
+import type { HistoryOptions, SessionDefaults } from "./types/session.js";
 
 export const createApp = ({
   sessionsDir,
-  ollamaBaseUrl
+  ollamaBaseUrl,
+  getSessionDefaults,
+  getHistoryOptions,
+  getPromptPreamble
 }: {
   sessionsDir: string;
   ollamaBaseUrl: string;
+  getSessionDefaults?: () => Promise<SessionDefaults>;
+  getHistoryOptions?: () => Promise<HistoryOptions>;
+  getPromptPreamble?: () => Promise<string>;
 }) => {
   const app = express();
-  const sessionService = createSessionService({ sessionsDir });
+  const sessionService = createSessionService({ sessionsDir, getSessionDefaults, getHistoryOptions });
   const ollamaClient = createOllamaClient({ baseUrl: ollamaBaseUrl });
   const runService = createRunService({
     getSession: sessionService.getSession,
     saveSession: sessionService.saveSession,
     runChat: ollamaClient.runChat,
-    runGenerate: ollamaClient.runGenerate
+    runGenerate: ollamaClient.runGenerate,
+    getPromptPreamble
   });
 
   app.use(express.json());

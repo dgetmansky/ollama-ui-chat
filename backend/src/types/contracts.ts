@@ -13,6 +13,7 @@ export type RunSessionRequest = {
   endpoint: StoredSession["endpoint"];
   model: string;
   stream: boolean;
+  think?: boolean;
   request_options: StoredSession["request_options"];
   request_id?: string;
 };

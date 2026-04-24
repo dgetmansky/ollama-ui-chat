@@ -1,0 +1,24 @@
+{
+  "session_defaults": {
+    "endpoint": "/api/chat",
+    "stream": false,
+    "think": true,
+    "request_options": {
+      "num_ctx": 32768,
+      "num_predict": 4096,
+      "temperature": 0.7
+    }
+  },
+  "ollama": {
+    "base_url": "http://127.0.0.1:11434"
+  },
+  "history": {
+    "max_messages": 20,
+    "include_thinking": false
+  },
+  "prompt_preamble": {
+    "enabled": true,
+    "path": "AGENTS.md",
+    "max_bytes": 65536
+  }
+}

@@ -68,7 +68,7 @@ textarea {
 
 .control-bar {
   display: grid;
-  grid-template-columns: 1.2fr 1.4fr 0.7fr 0.8fr 0.8fr auto auto auto;
+  grid-template-columns: 1.2fr 1.4fr 0.7fr 0.8fr 0.8fr 0.8fr auto auto auto;
   gap: 12px;
   padding: 16px;
   margin-bottom: 18px;
@@ -86,7 +86,21 @@ textarea {
   align-items: start;
 }
 
+.left-column {
+  display: grid;
+  gap: 18px;
+}
+
+.left-column,
+.diagnostics-panel {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+}
+
 .sessions-panel,
+.metrics-panel,
 .chat-panel,
 .diagnostics-panel {
   padding: 18px;
@@ -113,6 +127,34 @@ textarea {
   border-left: 4px solid var(--accent);
 }
 
+.message-content {
+  white-space: pre-wrap;
+}
+
+.message-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.message-thinking {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px dashed rgba(15, 118, 110, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.06);
+  color: var(--muted);
+}
+
+.message-thinking h3 {
+  margin: 0 0 8px;
+  color: var(--accent-soft);
+  font-size: 14px;
+}
+
+.message-thinking p {
+  margin: 0;
+}
+
 .chat-actions {
   display: flex;
   gap: 12px;
@@ -137,5 +179,12 @@ pre {
 
   .control-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .left-column,
+  .diagnostics-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
 }

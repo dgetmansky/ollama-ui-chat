@@ -2,6 +2,7 @@ type Props = {
   endpoint: "/api/chat" | "/api/generate";
   model: string;
   stream: boolean;
+  numCtx?: number;
   numPredict: number;
   temperature: number;
   onRefreshModels: () => void;
@@ -13,6 +14,7 @@ export const ControlBar = ({
   endpoint,
   model,
   stream,
+  numCtx,
   numPredict,
   temperature,
   onRefreshModels,
@@ -34,6 +36,10 @@ export const ControlBar = ({
     <label>
       <span>Stream</span>
       <input type="checkbox" checked={stream} onChange={() => undefined} />
+    </label>
+    <label>
+      <span>num_ctx</span>
+      <input readOnly value={numCtx ?? ""} onChange={() => undefined} />
     </label>
     <label>
       <span>num_predict</span>

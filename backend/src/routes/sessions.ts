@@ -14,7 +14,7 @@ export const createSessionsRouter = ({
   createSession: () => Promise<StoredSession>;
   getSession: (sessionId: string) => Promise<StoredSession>;
   deleteSession: (sessionId: string) => Promise<void>;
-  ping: () => Promise<{ status: "ok" }>;
+  ping: () => Promise<{ status: "ok"; latency_ms?: number }>;
 }) => {
   const router = Router();
 

@@ -109,4 +109,42 @@ describe("sessionStore", () => {
 
     expect(second.derived_metrics.total_sec).toBeNull();
   });
+
+  it("uses supplied defaults when creating a new session", async () => {
+    testDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    const store = createSessionStore({
+      sessionsDir: testDir,
+      getSessionDefaults: async () => ({
+        endpoint: "/api/chat",
+        stream: false,
+        think: true,
+        request_options: {
+          num_ctx: 32768,
+          num_predict: 4096,
+          temperature: 0.7
+        }
+      }),
+      getHistoryOptions: async () => ({
+        max_messages: 12,
+        include_thinking: false
+      })
+    });
+
+    const session = await store.create();
+
+    expect(session).toMatchObject({
+      endpoint: "/api/chat",
+      stream: false,
+      think: true,
+      request_options: {
+        num_ctx: 32768,
+        num_predict: 4096,
+        temperature: 0.7
+      },
+      history: {
+        max_messages: 12,
+        include_thinking: false
+      }
+    });
+  });
 });

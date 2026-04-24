@@ -165,7 +165,9 @@ describe("backend routes", () => {
         endpoint: "/api/chat",
         model: "llama3.1",
         stream: false,
+        think: true,
         request_options: {
+          num_ctx: 32768,
           num_predict: 32,
           temperature: 0.2
         }
@@ -186,6 +188,7 @@ describe("backend routes", () => {
     expect(runCall).toMatchObject({
       model: "llama3.1",
       stream: false,
+      think: true,
       messages: [
         {
           role: "user",
@@ -193,6 +196,7 @@ describe("backend routes", () => {
         }
       ],
       options: {
+        num_ctx: 32768,
         num_predict: 32,
         temperature: 0.2
       }
@@ -309,7 +313,7 @@ describe("backend routes", () => {
     });
   });
 
-  it("uses chat thinking text when the assistant content is empty", async () => {
+  it("keeps chat assistant content empty when only thinking is returned", async () => {
     testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
     testDir = join(testRootDir, "sessions");
     await mkdir(testDir);
@@ -347,7 +351,51 @@ describe("backend routes", () => {
       session: {
         messages: [
           { role: "user", content: "Think out loud" },
-          { role: "assistant", content: "Thinking fallback" }
+          { role: "assistant", thinking: "Thinking fallback", content: "" }
+        ]
+      }
+    });
+  });
+
+  it("persists chat thinking separately from assistant content", async () => {
+    testRootDir = await mkdtemp(join(tmpdir(), "ollama-ui-gdp-"));
+    testDir = join(testRootDir, "sessions");
+    await mkdir(testDir);
+
+    const app = createApp({ sessionsDir: testDir, ollamaBaseUrl: "http://127.0.0.1:11434" });
+    const createdResponse = await request(app).post("/backend/sessions").send({});
+    const createdBody = createdResponse.body as SessionResponseBody;
+
+    runChat.mockResolvedValueOnce({
+      message: {
+        role: "assistant",
+        thinking: "Internal reasoning",
+        content: "Final answer"
+      },
+      total_duration: 1000000000,
+      eval_count: 1,
+      eval_duration: 100000000
+    });
+
+    const response = await request(app)
+      .post(`/backend/sessions/${createdBody.id}/run`)
+      .send({
+        prompt: "Think, then answer",
+        endpoint: "/api/chat",
+        model: "qwen3.5",
+        stream: false,
+        request_options: {
+          num_predict: 32,
+          temperature: 0.2
+        }
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      session: {
+        messages: [
+          { role: "user", content: "Think, then answer" },
+          { role: "assistant", thinking: "Internal reasoning", content: "Final answer" }
         ]
       }
     });
@@ -1230,13 +1278,13 @@ describe("backend routes", () => {
   });
 
   it("pings ollama", async () => {
-    ping.mockResolvedValue({ status: "ok" });
+    ping.mockResolvedValue({ status: "ok", latency_ms: 42 });
     const app = createApp({ sessionsDir: "sessions", ollamaBaseUrl: "http://127.0.0.1:11434" });
 
     const response = await request(app).get("/backend/ollama/ping");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok" });
+    expect(response.body).toEqual({ status: "ok", latency_ms: 42 });
   });
 });
 

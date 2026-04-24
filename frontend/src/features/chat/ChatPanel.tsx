@@ -36,7 +36,17 @@ export const ChatPanel = ({ messages, errorMessage, onSend, pendingRequestId, on
         {messages.map((message, index) => (
           <article key={`${message.role}-${index}`} className={`message message-${message.role}`}>
             <strong>{message.role === "user" ? "User" : "Assistant"}</strong>
-            <p>{message.content}</p>
+            {message.role === "assistant" && message.thinking ? (
+              <section className="message-thinking" aria-label="Thinking">
+                <h3>Thinking</h3>
+                <p className="message-content">{message.thinking}</p>
+              </section>
+            ) : null}
+            {message.content.trim() ? (
+              <p className="message-content">{message.content}</p>
+            ) : (
+              <p className="message-empty">Empty response</p>
+            )}
           </article>
         ))}
       </div>

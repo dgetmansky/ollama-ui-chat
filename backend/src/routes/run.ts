@@ -35,6 +35,10 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
     return false;
   }
 
+  if (value.think !== undefined && !isBoolean(value.think)) {
+    return false;
+  }
+
   if (value.endpoint === "/api/chat" && value.stream !== false) {
     return false;
   }
@@ -48,6 +52,10 @@ const isValidRunSessionRequest = (value: unknown): value is RunSessionRequest =>
   }
 
   if (!isFiniteNumber(value.request_options.temperature)) {
+    return false;
+  }
+
+  if (value.request_options.num_ctx !== undefined && !isFiniteNumber(value.request_options.num_ctx)) {
     return false;
   }
 

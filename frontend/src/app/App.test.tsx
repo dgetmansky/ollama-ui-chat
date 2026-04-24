@@ -117,7 +117,7 @@ describe("App", () => {
     });
     vi.mocked(api.createSession).mockResolvedValue(newSession);
     vi.mocked(api.deleteSession).mockResolvedValue(undefined);
-    vi.mocked(api.ping).mockResolvedValue({ status: "ok" });
+    vi.mocked(api.ping).mockResolvedValue({ status: "ok", latency_ms: 42 });
     vi.mocked(api.abortRequest).mockResolvedValue({ status: "accepted" });
     sessionLookup = Object.fromEntries(baseSessions.map((session) => [session.id, session]));
   });
@@ -131,13 +131,27 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "session-beta" })).toBeInTheDocument();
   });
 
+  it("shows stats and derived metrics above sessions in the left column", async () => {
+    render(<App />);
+
+    const statsHeading = await screen.findByRole("heading", { name: "Stats" });
+    const metricsHeading = screen.getByRole("heading", { name: "Derived metrics" });
+    const sessionsHeading = screen.getByRole("heading", { name: "Sessions" });
+    const requestHeading = screen.getByRole("heading", { name: "Last request payload" });
+
+    expect(statsHeading.compareDocumentPosition(sessionsHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(metricsHeading.compareDocumentPosition(sessionsHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(sessionsHeading.compareDocumentPosition(requestHeading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it("uses non-streaming frontend defaults when no sessions exist", async () => {
     vi.mocked(api.listModels).mockResolvedValueOnce({ models: [] });
     vi.mocked(api.listSessions).mockResolvedValueOnce({ sessions: [] });
 
     render(<App />);
 
-    expect(await screen.findByDisplayValue("256")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("32768")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("4096")).toBeInTheDocument();
     expect(await screen.findByDisplayValue("0.7")).toBeInTheDocument();
     expect(screen.getByLabelText("Endpoint")).toHaveValue("/api/chat");
     expect(screen.getByLabelText("Stream")).not.toBeChecked();
@@ -163,6 +177,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Refresh models" }));
     await user.click(screen.getByRole("button", { name: "Ping" }));
+    expect(await screen.findByText("Action: Ollama ping: 42 ms")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "New session" }));
     await user.click(screen.getByRole("button", { name: "Delete session" }));
 
@@ -191,6 +206,70 @@ describe("App", () => {
       request_id: expect.any(String)
     });
     expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
+  });
+
+  it("preserves line breaks in rendered message text", async () => {
+    vi.mocked(api.listSessions).mockResolvedValueOnce({
+      sessions: [
+        {
+          ...baseSessions[0],
+          messages: [{ role: "assistant", content: "First line\nSecond line" }]
+        }
+      ]
+    });
+
+    render(<App />);
+
+    const messageText = await screen.findByText((_, element) =>
+      element?.textContent === "First line\nSecond line"
+    );
+
+    expect(messageText).toHaveClass("message-content");
+  });
+
+  it("renders assistant thinking separately from the final answer", async () => {
+    vi.mocked(api.listSessions).mockResolvedValueOnce({
+      sessions: [
+        {
+          ...baseSessions[0],
+          messages: [
+            {
+              role: "assistant",
+              thinking: "Internal reasoning",
+              content: "Final answer"
+            }
+          ]
+        }
+      ]
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Thinking")).toBeInTheDocument();
+    expect(screen.getByText("Internal reasoning")).toHaveClass("message-content");
+    expect(screen.getByText("Final answer")).toHaveClass("message-content");
+  });
+
+  it("shows an empty response placeholder when assistant content is empty", async () => {
+    vi.mocked(api.listSessions).mockResolvedValueOnce({
+      sessions: [
+        {
+          ...baseSessions[0],
+          messages: [
+            {
+              role: "assistant",
+              thinking: "Internal reasoning",
+              content: ""
+            }
+          ]
+        }
+      ]
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Internal reasoning")).toBeInTheDocument();
+    expect(screen.getByText("Empty response")).toHaveClass("message-empty");
   });
 
   it("uses the active session endpoint and stream flags when sending", async () => {

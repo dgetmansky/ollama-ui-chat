@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ChatPanel } from "../features/chat/ChatPanel";
 import { ControlBar } from "../features/control-bar/ControlBar";
 import { DiagnosticsPanel } from "../features/diagnostics/DiagnosticsPanel";
+import { MetricsPanel } from "../features/diagnostics/MetricsPanel";
 import { SessionsPanel } from "../features/sessions/SessionsPanel";
 import { api } from "../lib/api";
 import type { SessionRecord } from "../lib/types";
@@ -11,9 +12,15 @@ const emptySession: SessionRecord = {
   endpoint: "/api/chat",
   model: "",
   stream: false,
+  think: true,
   request_options: {
-    num_predict: 256,
+    num_ctx: 32768,
+    num_predict: 4096,
     temperature: 0.7
+  },
+  history: {
+    max_messages: 20,
+    include_thinking: false
   },
   messages: [],
   last_request: {},
@@ -86,9 +93,13 @@ export const App = () => {
 
   const pingBackend = async () => {
     try {
-      await api.ping();
+      const pingResponse = await api.ping();
       setActionError("");
-      setActionStatus("Ping successful");
+      setActionStatus(
+        typeof pingResponse.latency_ms === "number"
+          ? `Ollama ping: ${pingResponse.latency_ms} ms`
+          : "Ping successful"
+      );
     } catch (error) {
       setActionError(describeError(error, "Ping failed"));
     }
@@ -169,6 +180,7 @@ export const App = () => {
         endpoint: activeSession.endpoint,
         model: activeSession.model || models[0]?.name || "",
         stream: activeSession.stream,
+        think: activeSession.think,
         request_options: activeSession.request_options,
         request_id: requestId
       });
@@ -215,6 +227,7 @@ export const App = () => {
         endpoint={sessionView.endpoint}
         model={model}
         stream={sessionView.stream}
+        numCtx={sessionView.request_options.num_ctx}
         numPredict={sessionView.request_options.num_predict}
         temperature={sessionView.request_options.temperature}
         onRefreshModels={refreshModels}
@@ -222,12 +235,15 @@ export const App = () => {
         onCreateNewSession={createNewSession}
       />
       <div className="content-grid">
-        <SessionsPanel
-          sessionIds={sessions.map((session) => session.id)}
-          activeSessionId={activeSessionId}
-          onSelectSession={openSession}
-          onDeleteActiveSession={deleteActiveSession}
-        />
+        <div className="left-column">
+          <MetricsPanel stats={sessionView.last_stats} metrics={sessionView.derived_metrics} />
+          <SessionsPanel
+            sessionIds={sessions.map((session) => session.id)}
+            activeSessionId={activeSessionId}
+            onSelectSession={openSession}
+            onDeleteActiveSession={deleteActiveSession}
+          />
+        </div>
         <ChatPanel
           messages={sessionView.messages}
           errorMessage={actionError}
@@ -238,8 +254,6 @@ export const App = () => {
         <DiagnosticsPanel
           requestPayload={sessionView.last_request}
           responsePayload={sessionView.last_response}
-          stats={sessionView.last_stats}
-          metrics={sessionView.derived_metrics}
         />
       </div>
     </div>
