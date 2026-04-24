@@ -1,156 +1,115 @@
 # Ollama UI Chat
 
-A local, diagnostics-first web UI for testing and comparing Ollama models via `/api/chat` and `/api/generate`.
+🚧 **Work in Progress**
 
-> Project status: **Under construction** (active v1 development).
+Chat UI for local LLMs via Ollama.
+Self-hosted, privacy-first, simple to run.
 
-![Ollama UI v1 mockup](docs/mockups/ollama-ui-v1-page-mockup.png)
+---
 
-## Why this project
+## 🧠 What is this?
 
-`ollama-ui-chat` is built for practical model testing, not for a polished consumer chat experience. It focuses on:
+This project provides a minimal UI + backend to interact with **local LLM models** via [Ollama](https://ollama.ai).
 
-- fast request iteration,
-- endpoint comparison (`/api/chat` vs `/api/generate`),
-- request/response transparency,
-- metrics visibility,
-- local JSON session persistence.
+### Goals
 
-## Key features
+* 🔒 Fully local (no cloud, no data sharing)
+* ⚡ Simple and hackable architecture
+* 🧩 Easy integration with Ollama
+* 💬 Lightweight chat interface
 
-- Single-page local UI (React + Vite).
-- Local backend API (Express + TypeScript).
-- Model list refresh and backend ping checks.
-- Session lifecycle: create, open, delete.
-- Chat execution with selectable endpoint.
-- Optional request abort support.
-- Diagnostics panels for:
-  - last request payload,
-  - last raw response,
-  - stats,
-  - derived metrics.
-- Session files stored locally in `sessions/`.
+---
 
-## Architecture
+## ⚡ Quick Start
 
-- `frontend/` renders UI and calls `/backend/*`.
-- `backend/` manages session files and proxies requests to Ollama.
-- Ollama base URL is configurable (`config.json` or env override).
-- Prompt preamble can be loaded from `AGENTS.md`.
+### 1. Install Ollama
 
-Default local ports:
+https://ollama.ai
 
-- Frontend: `http://127.0.0.1:4173`
-- Backend: `http://127.0.0.1:4174`
-- Ollama (default): `http://127.0.0.1:11434`
+### 2. Run a model
 
-## Requirements
+```bash
+ollama run llama3
+```
 
-- Node.js 20+
-- npm 10+
-- `curl` (used by `run.sh` readiness checks)
-- Running Ollama API (local or tunnelled)
-
-## Quick start (recommended)
+### 3. Start the app
 
 ```bash
 ./run.sh
 ```
 
-What `run.sh` does:
+### 4. Open in browser
 
-- ensures `sessions/` exists,
-- installs dependencies if `node_modules/` is missing,
-- starts backend and frontend,
-- waits until both are ready,
-- prints the UI URL.
-
-Open:
-
-- `http://127.0.0.1:4173`
-
-Stop with `Ctrl+C`.
-
-## Manual run
-
-```bash
-npm install
-npm run dev:backend
-npm run dev:frontend
+```
+http://localhost:3000
 ```
 
-## Configuration
+---
 
-Main config file: `config.json`
+## 🏗 Project Structure
 
-Important fields:
-
-- `session_defaults.endpoint`: `/api/chat` or `/api/generate`
-- `session_defaults.stream`: default streaming flag
-- `session_defaults.think`: include `think` in requests
-- `session_defaults.request_options`: `num_ctx`, `num_predict`, `temperature`
-- `ollama.base_url`: Ollama API base URL
-- `history.max_messages`: message history window
-- `prompt_preamble.enabled/path/max_bytes`: preamble injection settings
-
-Environment overrides (backend):
-
-- `PORT` (default `4174`)
-- `SESSIONS_DIR` (default `<repo>/sessions`)
-- `CONFIG_PATH` (default `<repo>/config.json`)
-- `OLLAMA_BASE_URL` (overrides `config.json`)
-
-## API overview
-
-Base prefix: `/backend`
-
-- `GET /health`
-- `GET /ollama/models`
-- `GET /ollama/ping`
-- `GET /sessions`
-- `POST /sessions`
-- `GET /sessions/:id`
-- `DELETE /sessions/:id`
-- `POST /sessions/:id/run`
-- `POST /requests/:requestId/abort`
-
-## Project structure
-
-```text
-.
-├── frontend/                 # React UI
-├── backend/                  # Express API + Ollama bridge
-├── sessions/                 # Local persisted session JSON files
-├── docs/                     # Product, API, and UI docs
-├── config.json               # Runtime defaults
-├── run.sh                    # Recommended local startup script
-└── AGENTS.md                 # Optional prompt preamble source
+```
+frontend/   - UI (TypeScript)
+backend/    - API layer (Ollama integration)
+sessions/   - local chat storage
+docs/       - documentation (optional)
 ```
 
-## Scripts
+---
 
-From repository root:
+## ⚙️ Configuration
 
-- `npm run dev:frontend`
-- `npm run dev:backend`
-- `npm run test`
-- `npm run test:frontend`
-- `npm run test:backend`
+Basic configuration is stored in:
 
-## Testing
-
-Run all tests:
-
-```bash
-npm run test
+```
+config.json
 ```
 
-## Documentation
+Example:
 
-- `docs/01-product-spec.md`
-- `docs/02-api-behavior.md`
-- `docs/03-ui-architecture.md`
+```json
+{
+  "ollamaUrl": "http://localhost:11434",
+  "model": "llama3"
+}
+```
 
-## Contributing
+---
 
-This project is actively evolving. Prefer small, focused pull requests with clear behavior changes and updated tests.
+## 📌 Requirements
+
+* Ollama running locally
+* Node.js (for frontend)
+* Bash environment (for `run.sh`)
+
+---
+
+## 🧪 Dev Notes
+
+* Default port: `3000`
+* Ollama API: `http://localhost:11434`
+* Entry point: `./run.sh`
+* Config file: `config.json`
+
+---
+
+## 🗺 Roadmap
+
+* [ ] Streaming responses
+* [ ] Multi-model support
+* [ ] Improved UI/UX
+* [ ] Docker setup
+* [ ] Auth / multi-user support
+
+---
+
+## 🤝 Contributing
+
+Contributions, ideas, and feedback are welcome.
+Feel free to open issues or submit PRs.
+
+---
+
+## 📄 License
+
+MIT
