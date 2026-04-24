@@ -208,6 +208,62 @@ describe("App", () => {
     expect(await screen.findByText("Synthetic response")).toBeInTheDocument();
   });
 
+  it("renders the submitted prompt immediately while the request is pending", async () => {
+    const user = userEvent.setup();
+    let resolveRunSession: ((value: { session: SessionRecord }) => void) | undefined;
+
+    vi.mocked(api.runSession).mockImplementationOnce(
+      () =>
+        new Promise<{ session: SessionRecord }>((resolve) => {
+          resolveRunSession = resolve;
+        })
+    );
+
+    render(<App />);
+
+    const prompt = await screen.findByLabelText("Prompt");
+    await user.type(prompt, "Optimistic prompt");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(screen.getByText("Optimistic prompt")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRunSession?.({
+        session: {
+          ...baseSessions[0],
+          messages: [
+            { role: "user", content: "Optimistic prompt" },
+            { role: "assistant", content: "Final response" }
+          ],
+          last_request: { prompt: "Optimistic prompt" },
+          last_response: { done: true },
+          last_stats: { total_duration: 1000 },
+          derived_metrics: { total_sec: 1 }
+        }
+      });
+    });
+  });
+
+  it("scrolls the whole page with top and bottom controls", async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: scrollTo
+    });
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "TOP" }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+
+    await user.click(screen.getByRole("button", { name: "BOTTOM" }));
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: document.documentElement.scrollHeight,
+      behavior: "smooth"
+    });
+  });
+
   it("preserves line breaks in rendered message text", async () => {
     vi.mocked(api.listSessions).mockResolvedValueOnce({
       sessions: [

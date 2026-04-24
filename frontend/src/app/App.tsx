@@ -3,6 +3,7 @@ import { ChatPanel } from "../features/chat/ChatPanel";
 import { ControlBar } from "../features/control-bar/ControlBar";
 import { DiagnosticsPanel } from "../features/diagnostics/DiagnosticsPanel";
 import { MetricsPanel } from "../features/diagnostics/MetricsPanel";
+import { ScrollControls } from "../features/scroll/ScrollControls";
 import { SessionsPanel } from "../features/sessions/SessionsPanel";
 import { api } from "../lib/api";
 import type { SessionRecord } from "../lib/types";
@@ -174,6 +175,16 @@ export const App = () => {
     const requestId = createRequestId();
     const sessionId = activeSession.id;
     setPendingRequestId(requestId);
+    setSessions((currentSessions) =>
+      currentSessions.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              messages: [...session.messages, { role: "user", content: prompt }]
+            }
+          : session
+      )
+    );
     try {
       const response = await api.runSession(activeSession.id, {
         prompt,
@@ -213,6 +224,7 @@ export const App = () => {
 
   return (
     <div className="app-shell">
+      <ScrollControls />
       <header className="app-header">
         <h1>Ollama UI GDP</h1>
         <span className="status-pill">{startupError ? "Startup failed" : "Backend reachable"}</span>
